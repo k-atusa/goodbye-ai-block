@@ -1,289 +1,244 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anti-Zaiming — 이미지 난독화</title>
+<title>goodbye-ai-block</title>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:20px;min-height:100vh}
-  .wrap{max-width:960px;margin:0 auto}
-  h1{text-align:center;font-size:1.4rem;margin-bottom:4px;color:#fff}
-  .sub{text-align:center;font-size:.8rem;color:#888;margin-bottom:16px}
-  #dropzone{border:2px dashed #555;border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;background:#16213e;margin-bottom:12px;transition:border-color .2s}
-  #dropzone.over{border-color:#e94560;background:#1a1a3e}
-  #dropzone .hint{color:#888;font-size:.85rem}
-  .ctrl{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
-  input[type=text]{background:#16213e;border:1px solid #444;color:#fff;padding:7px 12px;border-radius:6px;font-size:.85rem;flex:1;min-width:120px}
-  button{padding:7px 16px;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600;transition:opacity .15s}
-  button:hover{opacity:.85}
-  button:disabled{opacity:.35;cursor:default}
-  .btn-enc{background:#e94560;color:#fff}
-  .btn-dec{background:#0f3460;color:#fff}
-  .btn-dl{background:#533483;color:#fff}
-  .btn-clear{background:#333;color:#aaa;font-size:.8rem}
-  .status{text-align:center;font-size:.82rem;min-height:22px;padding:4px;color:#888}
-  .status.err{color:#e94560}.status.ok{color:#4ecca3}
-  #grid{display:flex;flex-direction:column;gap:6px}
-  .item{background:#16213e;border-radius:6px;padding:10px}
-  .item-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
-  .item-name{font-size:.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
-  .item-meta{font-size:.72rem;color:#888;white-space:nowrap}
-  .item-badge{font-size:.7rem;padding:2px 6px;border-radius:3px;white-space:nowrap}
-  .badge-signal{background:#0f3460;color:#7ec8e3}
-  .badge-done{background:#1b4332;color:#4ecca3}
-  .badge-err{background:#3d0000;color:#e94560}
-  .badge-wait{background:#333;color:#888}
-  .item-body{display:flex;align-items:center;gap:8px;overflow-x:auto}
-  .item-body canvas{max-height:100px;max-width:180px;border-radius:3px;background:#0a0a1a;display:block}
-  .arrow{color:#555;flex-shrink:0}
-  .item-foot{display:flex;justify-content:flex-end;margin-top:6px;gap:6px}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #111; color: #ddd; padding: 32px 16px; min-height: 100vh; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 24px; color: #fff; }
+  .seed-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .seed-row input { flex: 1; background: #1a1a1a; border: 1px solid #333; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: .85rem; }
+  .tabs { display: flex; gap: 2px; margin-bottom: 20px; }
+  .tab { background: #1a1a1a; border: 1px solid #333; border-bottom: none; color: #888; padding: 8px 20px; cursor: pointer; font-size: .85rem; border-radius: 6px 6px 0 0; transition: color .15s; }
+  .tab.active { background: #222; color: #fff; border-color: #444; }
+  .panel { display: none; background: #222; border: 1px solid #444; border-radius: 0 6px 6px 6px; padding: 20px; }
+  .panel.active { display: block; }
+  button { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600; transition: opacity .15s; }
+  button:hover { opacity: .85; }
+  button:disabled { opacity: .3; cursor: default; }
+  .btn-pri { background: #c084fc; color: #000; }
+  .btn-sec { background: #333; color: #ccc; }
+  #dropzone { border: 2px dashed #444; border-radius: 8px; padding: 36px 16px; text-align: center; cursor: pointer; color: #888; font-size: .85rem; margin-bottom: 16px; transition: border-color .2s; }
+  #dropzone.over { border-color: #c084fc; }
+  .ctrl { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .status { text-align: center; font-size: .8rem; min-height: 20px; color: #888; margin-bottom: 8px; }
+  .status.err { color: #f87171; } .status.ok { color: #4ade80; }
+  #grid { display: flex; flex-direction: column; gap: 6px; }
+  .item { background: #1a1a1a; border-radius: 6px; padding: 10px; }
+  .item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; }
+  .item-name { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .item-meta { font-size: .7rem; color: #666; }
+  .item-badge { font-size: .65rem; padding: 2px 6px; border-radius: 3px; }
+  .badge-sig { background: #1e293b; color: #7dd3fc; }
+  .badge-done { background: #14532d; color: #4ade80; }
+  .badge-err { background: #450a0a; color: #f87171; }
+  .badge-wait { background: #262626; color: #888; }
+  .item-body { display: flex; align-items: center; gap: 8px; overflow-x: auto; }
+  .item-body canvas { max-height: 80px; max-width: 160px; border-radius: 3px; background: #000; }
+  .arrow { color: #555; }
+  .item-foot { display: flex; justify-content: flex-end; margin-top: 6px; gap: 6px; }
+  .text-row { display: flex; gap: 12px; }
+  .text-col { flex: 1; min-width: 0; }
+  textarea { width: 100%; height: 180px; background: #1a1a1a; border: 1px solid #333; border-radius: 6px; color: #eee; padding: 12px; font-family: monospace; font-size: .85rem; resize: vertical; }
+  textarea:focus { outline: none; border-color: #555; }
+  .text-ctrl { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
+  @media (max-width: 600px) { .text-row { flex-direction: column; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🔒 Anti-Zaiming</h1>
-  <p class="sub">이미지를 난독화하여 공유하고, 키로 복호화하세요 · 여러 파일 동시 처리 가능</p>
-
-  <div id="dropzone" tabindex="0">
-    <span class="hint">이미지를 드래그 / 클릭 / 붙여넣기 (여러 파일 가능)</span>
+  <h1>goodbye-ai-block</h1>
+  <div class="seed-row">
+    <input type="text" id="seedInput" placeholder="Seed (leave empty for default)">
   </div>
-  <input type="file" id="fileInput" accept="image/*" multiple hidden>
-
-  <div class="ctrl">
-    <input type="text" id="keyInput" placeholder="키 (비워두면 기본 키 사용)">
-    <button class="btn-enc" id="btnEnc" disabled>전체 난독화</button>
-    <button class="btn-dec" id="btnDec" disabled>전체 복호화</button>
-    <button class="btn-dl" id="btnDlAll" style="display:none">전체 다운로드</button>
-    <button class="btn-clear" id="btnClear" style="display:none">초기화</button>
+  <div class="tabs">
+    <div class="tab active" data-tab="img-panel">Image</div>
+    <div class="tab" data-tab="txt-panel">Text</div>
   </div>
-  <div class="status" id="status"></div>
 
-  <div id="grid"></div>
+  <!-- image panel -->
+  <div id="img-panel" class="panel active">
+    <div id="dropzone">Drag / click / paste images</div>
+    <input type="file" id="fileInput" accept="image/*" multiple hidden>
+    <div class="ctrl">
+      <button class="btn-pri" id="btnConvert" disabled>Convert</button>
+      <button class="btn-sec" id="btnDlAll" style="display:none">Download All</button>
+      <button class="btn-sec" id="btnClear" style="display:none">Clear</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div id="grid"></div>
+  </div>
+
+  <!-- text panel -->
+  <div id="txt-panel" class="panel">
+    <div class="text-row">
+      <div class="text-col"><textarea id="txtInput" placeholder="Plain text or AI!1(...) input"></textarea></div>
+      <div class="text-col"><textarea id="txtOutput" placeholder="Result" readonly></textarea></div>
+    </div>
+    <div class="text-ctrl">
+      <button class="btn-pri" id="btnTxtConvert">Convert</button>
+      <button class="btn-sec" id="btnTxtCopy">Copy</button>
+      <button class="btn-sec" id="btnTxtClear">Clear</button>
+    </div>
+    <div class="status" id="txtStatus"></div>
+  </div>
 </div>
 
 <script src="obfuscator.js"></script>
 <script>
 (() => {
-  const dropzone = document.getElementById('dropzone');
-  const fileInput = document.getElementById('fileInput');
-  const keyInput = document.getElementById('keyInput');
-  const btnEnc = document.getElementById('btnEnc');
-  const btnDec = document.getElementById('btnDec');
+  // tab switching
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  const drop = document.getElementById('dropzone');
+  const fileIn = document.getElementById('fileInput');
+  const seedIn = document.getElementById('seedInput');
+  const btnConvert = document.getElementById('btnConvert');
   const btnDlAll = document.getElementById('btnDlAll');
   const btnClear = document.getElementById('btnClear');
   const statusEl = document.getElementById('status');
   const grid = document.getElementById('grid');
-
   const items = [];
-  const SUPPORTED_OUT = ['image/jpeg', 'image/png', 'image/webp'];
-
-  // ---- File loading ----
+  const SUPPORTED = ['image/jpeg','image/png','image/webp'];
 
   function addFiles(files) {
     for (const f of files) {
       if (!f.type.startsWith('image/')) continue;
-      const item = { file: f, name: f.name, type: f.type, srcCanvas: null, resultCanvas: null, status: 'loading', el: null };
-      items.push(item);
-      loadItem(item);
+      const item = { file: f, name: f.name, type: f.type, src: null, result: null, status: 'loading', el: null };
+      items.push(item); loadItem(item);
     }
-    updateButtons();
+    updateUI();
   }
 
   function loadItem(item) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    const r = new FileReader();
+    r.onload = e => {
       const img = new Image();
       img.onload = () => {
         const c = document.createElement('canvas');
         c.width = img.width; c.height = img.height;
         c.getContext('2d').drawImage(img, 0, 0);
-        item.srcCanvas = c;
-        item.status = 'loaded';
-        AZ.detect(c).then(sig => {
-          item.signal = sig;
-          renderItem(item);
-        });
-        renderItem(item);
-        updateButtons();
+        item.src = c; item.status = 'ready';
+        AZ.detect(c).then(sig => { item.signal = sig; render(item); });
+        render(item); updateUI();
       };
       img.src = e.target.result;
     };
-    reader.readAsDataURL(item.file);
-    renderItem(item);
+    r.readAsDataURL(item.file); render(item);
   }
 
-  // ---- Rendering ----
-
-  function renderItem(item) {
-    if (!item.el) {
-      item.el = document.createElement('div');
-      item.el.className = 'item';
-      grid.appendChild(item.el);
-    }
-    const dims = item.srcCanvas ? `${item.srcCanvas.width}×${item.srcCanvas.height}` : '...';
+  function render(item) {
+    if (!item.el) { item.el = document.createElement('div'); item.el.className = 'item'; grid.appendChild(item.el); }
+    const dims = item.src ? `${item.src.width}×${item.src.height}` : '';
     let badge = '';
-    if (item.status === 'loading') badge = '<span class="item-badge badge-wait">로드 중</span>';
-    else if (item.status === 'processing') badge = '<span class="item-badge badge-wait">처리 중…</span>';
-    else if (item.status === 'done') badge = '<span class="item-badge badge-done">완료 ✓</span>';
-    else if (item.status === 'error') badge = `<span class="item-badge badge-err">${item.errorMsg || '오류'}</span>`;
-    else if (item.signal) badge = '<span class="item-badge badge-signal">AZ 감지됨</span>';
-
+    if (item.status === 'loading') badge = '<span class="item-badge badge-wait">Loading</span>';
+    else if (item.status === 'processing') badge = '<span class="item-badge badge-wait">Processing</span>';
+    else if (item.status === 'done') badge = '<span class="item-badge badge-done">Done</span>';
+    else if (item.status === 'error') badge = `<span class="item-badge badge-err">${item.err||'Error'}</span>`;
+    else if (item.signal) badge = '<span class="item-badge badge-sig">Obfuscated</span>';
     item.el.innerHTML = `
-      <div class="item-head">
-        <span class="item-name" title="${item.name}">${item.name}</span>
-        <span class="item-meta">${dims}</span>
-        ${badge}
-      </div>
-      <div class="item-body">
-        <div class="item-src"></div>
-        ${item.resultCanvas ? '<span class="arrow">→</span><div class="item-result"></div>' : ''}
-      </div>
-      ${item.status === 'done' ? '<div class="item-foot"><button class="btn-dl btn-dl-item">다운로드</button></div>' : ''}
-    `;
-
-    // Attach canvases (can't do in innerHTML)
-    if (item.srcCanvas) {
-      const thumb = document.createElement('canvas');
-      const scale = Math.min(180 / item.srcCanvas.width, 100 / item.srcCanvas.height, 1);
-      thumb.width = item.srcCanvas.width * scale;
-      thumb.height = item.srcCanvas.height * scale;
-      thumb.getContext('2d').drawImage(item.srcCanvas, 0, 0, thumb.width, thumb.height);
-      thumb.style.maxHeight = '100px';
-      item.el.querySelector('.item-src').appendChild(thumb);
-    }
-    if (item.resultCanvas) {
-      const thumb = document.createElement('canvas');
-      const scale = Math.min(180 / item.resultCanvas.width, 100 / item.resultCanvas.height, 1);
-      thumb.width = item.resultCanvas.width * scale;
-      thumb.height = item.resultCanvas.height * scale;
-      thumb.getContext('2d').drawImage(item.resultCanvas, 0, 0, thumb.width, thumb.height);
-      thumb.style.maxHeight = '100px';
-      item.el.querySelector('.item-result').appendChild(thumb);
-    }
-
-    // Download button
-    const dlBtn = item.el.querySelector('.btn-dl-item');
-    if (dlBtn) dlBtn.onclick = () => downloadItem(item);
+      <div class="item-head"><span class="item-name" title="${item.name}">${item.name}</span><span class="item-meta">${dims}</span>${badge}</div>
+      <div class="item-body"><div class="src"></div>${item.result?'<span class="arrow">→</span><div class="res"></div>':''}</div>
+      ${item.status==='done'?'<div class="item-foot"><button class="btn-sec dl">Download</button></div>':''}`;
+    if (item.src) { const t = thumb(item.src); item.el.querySelector('.src').appendChild(t); }
+    if (item.result) { const t = thumb(item.result); item.el.querySelector('.res').appendChild(t); }
+    const dl = item.el.querySelector('.dl'); if (dl) dl.onclick = () => downloadItem(item);
   }
 
-  function updateButtons() {
-    const hasItems = items.some(i => i.status !== 'loading');
-    const hasDone = items.some(i => i.status === 'done');
-    btnEnc.disabled = btnDec.disabled = !hasItems;
-    btnDlAll.style.display = hasDone ? '' : 'none';
-    btnClear.style.display = items.length > 0 ? '' : 'none';
+  function thumb(cv) {
+    const t = document.createElement('canvas');
+    const s = Math.min(160/cv.width, 80/cv.height, 1);
+    t.width = cv.width*s; t.height = cv.height*s;
+    t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height); return t;
   }
 
-  function setStatus(msg, type) {
-    statusEl.textContent = msg;
-    statusEl.className = 'status' + (type ? ' ' + type : '');
+  function updateUI() {
+    btnConvert.disabled = !items.some(i => i.status !== 'loading');
+    btnDlAll.style.display = items.some(i => i.status === 'done') ? '' : 'none';
+    btnClear.style.display = items.length ? '' : 'none';
   }
 
-  // ---- Process ----
+  function setStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = 'status'+(cls?' '+cls:''); }
 
-  async function processAll(mode) {
-    btnEnc.disabled = btnDec.disabled = true;
-    const key = keyInput.value;
-    let done = 0, fail = 0;
+  // auto-detect: signal found → decode, else encode
+  async function convertAll() {
+    btnConvert.disabled = true;
+    const seed = seedIn.value;
+    let ok = 0, fail = 0;
     const total = items.filter(i => i.status !== 'loading').length;
-
     for (const item of items) {
       if (item.status === 'loading') continue;
-      item.status = 'processing';
-      item.resultCanvas = null;
-      renderItem(item);
-      setStatus(`처리 중… (${done + fail + 1}/${total})`, '');
-
-      await new Promise(r => setTimeout(r, 10)); // yield for UI
-
+      item.status = 'processing'; item.result = null; render(item);
+      setStatus(`${ok+fail+1}/${total}`,'');
+      await new Promise(r => setTimeout(r, 10));
       try {
-        const t0 = performance.now();
-        if (mode === 'encode') {
-          item.resultCanvas = await AZ.obfuscate(item.srcCanvas, key);
-        } else {
-          item.resultCanvas = await AZ.deobfuscate(item.srcCanvas, key);
-        }
-        item.status = 'done';
-        done++;
-      } catch (e) {
-        item.status = 'error';
-        item.errorMsg = e.message;
-        fail++;
-      }
-      renderItem(item);
+        item.result = item.signal ? await AZ.deobfuscate(item.src, seed) : await AZ.obfuscate(item.src, seed);
+        item.status = 'done'; ok++;
+      } catch (e) { item.status = 'error'; item.err = e.message; fail++; }
+      render(item);
     }
-
-    const modeLabel = mode === 'encode' ? '난독화' : '복호화';
-    if (fail === 0) setStatus(`${modeLabel} 완료: ${done}개`, 'ok');
-    else setStatus(`${modeLabel}: ${done}개 성공, ${fail}개 실패`, fail > 0 ? 'err' : 'ok');
-    updateButtons();
+    setStatus(fail ? `${ok} done, ${fail} failed` : `Done: ${ok}`, fail ? 'err' : 'ok');
+    updateUI();
   }
 
-  // ---- Download ----
-
-  function getOutType(originalType) {
-    return SUPPORTED_OUT.includes(originalType) ? originalType : 'image/png';
-  }
-
-  function getOutExt(type) {
-    return { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[type] || '.png';
-  }
+  function getExt(t) { return {['image/jpeg']:'.jpg',['image/png']:'.png',['image/webp']:'.webp'}[t]||'.png'; }
 
   function downloadItem(item) {
-    if (!item.resultCanvas) return;
-    const outType = getOutType(item.type);
-    const quality = outType === 'image/jpeg' ? 0.95 : undefined;
-
-    // 원본 파일명 유지 (확장자가 다르면 맞게 교체)
-    const outExt = getOutExt(outType);
-    const baseName = item.name.replace(/\.[^.]+$/, '');
-    const outName = baseName + outExt;
-
-    item.resultCanvas.toBlob((blob) => {
+    if (!item.result) return;
+    const t = SUPPORTED.includes(item.type) ? item.type : 'image/png';
+    item.result.toBlob(blob => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = outName;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    }, outType, quality);
+      a.download = item.name.replace(/\.[^.]+$/,'') + getExt(t);
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }, t, t==='image/jpeg' ? 0.95 : undefined);
   }
 
   async function downloadAll() {
-    for (const item of items) {
-      if (item.status !== 'done') continue;
-      downloadItem(item);
-      await new Promise(r => setTimeout(r, 300));
-    }
+    for (const item of items) { if (item.status==='done') { downloadItem(item); await new Promise(r=>setTimeout(r,300)); } }
   }
 
-  // ---- Events ----
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
-  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
-  dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classList.remove('over'); addFiles(e.dataTransfer.files); });
-  fileInput.addEventListener('change', () => { if (fileInput.files.length) addFiles(fileInput.files); fileInput.value = ''; });
-
-  document.addEventListener('paste', (e) => {
-    const items2 = e.clipboardData?.items;
-    if (!items2) return;
-    const files = [];
-    for (const it of items2) { if (it.type.startsWith('image/')) files.push(it.getAsFile()); }
-    if (files.length) addFiles(files);
+  drop.addEventListener('click', () => fileIn.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
+  fileIn.addEventListener('change', () => { if (fileIn.files.length) addFiles(fileIn.files); fileIn.value=''; });
+  document.addEventListener('paste', e => {
+    const fs=[]; for (const it of (e.clipboardData?.items||[])) if (it.type.startsWith('image/')) fs.push(it.getAsFile());
+    if (fs.length) addFiles(fs);
   });
-
-  btnEnc.addEventListener('click', () => processAll('encode'));
-  btnDec.addEventListener('click', () => processAll('decode'));
+  btnConvert.addEventListener('click', convertAll);
   btnDlAll.addEventListener('click', downloadAll);
-  btnClear.addEventListener('click', () => {
-    items.length = 0;
-    grid.innerHTML = '';
-    btnDlAll.style.display = 'none';
-    btnClear.style.display = 'none';
-    btnEnc.disabled = btnDec.disabled = true;
-    setStatus('', '');
+  btnClear.addEventListener('click', () => { items.length=0; grid.innerHTML=''; btnDlAll.style.display='none'; btnClear.style.display='none'; btnConvert.disabled=true; setStatus(''); });
+
+  // -- text panel --
+  const txtIn = document.getElementById('txtInput');
+  const txtOut = document.getElementById('txtOutput');
+  const txtSt = document.getElementById('txtStatus');
+  function setTxtSt(m,c) { txtSt.textContent=m; txtSt.className='status'+(c?' '+c:''); }
+
+  // auto-detect: AI!1(...) → decode, else encode
+  document.getElementById('btnTxtConvert').addEventListener('click', async () => {
+    const val = txtIn.value.trim();
+    if (!val) { setTxtSt('No input','err'); return; }
+    try {
+      const seed = seedIn.value;
+      if (/AI!1\(/.test(val)) { txtOut.value = await AZ.deobfuscateText(val, seed); setTxtSt('Decoded','ok'); }
+      else { txtOut.value = await AZ.obfuscateText(val, seed); setTxtSt('Encoded','ok'); }
+    } catch (e) { setTxtSt(e.message,'err'); }
   });
+  document.getElementById('btnTxtCopy').addEventListener('click', () => { navigator.clipboard.writeText(txtOut.value||txtIn.value).catch(()=>{}); });
+  document.getElementById('btnTxtClear').addEventListener('click', () => { txtIn.value=''; txtOut.value=''; setTxtSt(''); });
 })();
 </script>
 </body>
