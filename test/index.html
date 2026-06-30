@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Anti-Zaiming 확장 테스트</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:24px;max-width:800px;margin:0 auto}
+  h1{font-size:1.3rem;margin-bottom:8px}
+  h2{font-size:1rem;margin:16px 0 8px;color:#aaa}
+  p,.info{font-size:.85rem;color:#888;margin-bottom:8px}
+  .info{background:#16213e;padding:8px 12px;border-radius:6px;border-left:3px solid #0f3460}
+  .pair{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}
+  .pair div{text-align:center}
+  .pair img{border:1px solid #333;border-radius:4px;max-width:300px;display:block;margin-bottom:4px}
+  .pair .label{font-size:.75rem;color:#888}
+  #log{font-size:.8rem;color:#4ecca3;margin-top:12px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+  <h1>🧪 Anti-Zaiming 확장 테스트 페이지</h1>
+
+  <div class="info">
+    이 페이지는 확장이 정상 동작하는지 테스트합니다.<br>
+    확장이 설치·활성화되어 있으면, 아래 난독화된 이미지가 <b>자동으로 원본처럼 복호화</b>되어야 합니다.
+  </div>
+
+  <h2>테스트 1: 기본 키 (빈 문자열)</h2>
+  <div class="pair">
+    <div><img id="orig1"><span class="label">원본</span></div>
+    <div><img id="obf1"><span class="label">난독화됨 → 확장이 복호화해야 함</span></div>
+  </div>
+
+  <h2>테스트 2: 커스텀 키 ("hello")</h2>
+  <div class="pair">
+    <div><img id="orig2"><span class="label">원본</span></div>
+    <div><img id="obf2"><span class="label">난독화됨 (키: hello) → 키가 맞아야 복호화됨</span></div>
+  </div>
+
+  <p>테스트 2는 확장의 키가 "hello"로 설정되어 있을 때만 올바르게 복호화됩니다.</p>
+
+  <div id="log"></div>
+
+<script src="../web/obfuscator.js"></script>
+<script>
+  const log = document.getElementById('log');
+  function addLog(msg) { log.textContent += msg + '\n'; }
+
+  async function createTestImage(text, bg, fg) {
+    const c = document.createElement('canvas');
+    c.width = 200; c.height = 120;
+    const ctx = c.getContext('2d');
+    // 배경 그라데이션
+    const g = ctx.createLinearGradient(0, 0, 200, 120);
+    g.addColorStop(0, bg); g.addColorStop(1, fg);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 200, 120);
+    // 도형
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.arc(150, 40, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(20, 70, 60, 30);
+    // 텍스트
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px sans-serif';
+    ctx.fillText(text, 20, 45);
+    return c;
+  }
+
+  async function init() {
+    try {
+      addLog('테스트 이미지 생성 중...');
+
+      // 테스트 1: 기본 키
+      const src1 = await createTestImage('테스트 A', '#e94560', '#0f3460');
+      document.getElementById('orig1').src = src1.toDataURL();
+      const obf1 = await AZ.obfuscate(src1, '');
+      document.getElementById('obf1').src = obf1.toDataURL();
+      addLog('✓ 테스트 1 생성 완료 (기본 키)');
+
+      // 테스트 2: 커스텀 키
+      const src2 = await createTestImage('테스트 B', '#533483', '#16213e');
+      document.getElementById('orig2').src = src2.toDataURL();
+      const obf2 = await AZ.obfuscate(src2, 'hello');
+      document.getElementById('obf2').src = obf2.toDataURL();
+      addLog('✓ 테스트 2 생성 완료 (키: hello)');
+
+      addLog('\n확장이 활성화되어 있다면, 난독화된 이미지가 원본과 같은 모습으로 보여야 합니다.');
+    } catch (e) {
+      addLog('✗ 오류: ' + e.message);
+    }
+  }
+  init();
+</script>
+</body>
+</html>

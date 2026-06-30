@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Anti-Zaiming",
+  "version": "1.0.0",
+  "description": "난독화된 이미지를 자동으로 감지하고 복호화합니다",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "anti-zaiming@example.com",
+      "strict_min_version": "121.0"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["obfuscator.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Anti-Zaiming"
+  }
+}
