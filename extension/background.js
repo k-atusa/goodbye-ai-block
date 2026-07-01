@@ -1,12 +1,12 @@
 // background.js — service worker for CORS bypass and badge updates
 
-chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // fetch cross-origin images and return as data URL
   if (msg.type === 'fetch-image') {
     fetchAsDataUrl(msg.url)
-      .then(dataUrl => respond({ ok: true, dataUrl }))
-      .catch(err => respond({ ok: false, error: err.message }));
-    return true; // async response
+      .then(dataUrl => sendResponse({ ok: true, dataUrl }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true; // keep channel open for async response
   }
 
   // update toolbar badge with decoded count

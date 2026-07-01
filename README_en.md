@@ -71,4 +71,4 @@ Click extension icon or go to extension Options to enter and save your Seed.
 
 1. Seed → SHA-256 → PRNG seed
 2. Per-byte XOR + bit rotation on UTF-8 bytes
-3. Base64-encode and wrap as `AI1(...)`
+3. Base64-encode and wrap as `AI!1(...)`

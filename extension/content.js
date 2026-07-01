@@ -1,92 +1,115 @@
-// content.js — auto-detect and decode obfuscated images & text on page
+// content.js — auto-detect and decode obfuscated text, and inject page-worker for images
 (() => {
-  const MIN_SIZE = 64;                    // minimum image dimension to process
-  const ATTR = 'data-az-processed';       // attribute to mark processed elements
-  const TEXT_RE = /AI!1\(([^)]+)\)/g;      // regex to find AI!1(...) text signatures
+  const TEXT_RE = /AI!1\(([^)]+)\)/g;
   let enabled = true;
   let key = '';
-  let decoded = 0;
-  const textCache = new WeakMap();        // tracks processed text nodes to avoid re-processing
+  let decodedCount = 0;
+  const textCache = new WeakMap();
 
-  // load settings from storage
+  // Load settings
   chrome.storage.sync.get({ enabled: true, key: '' }, cfg => {
     enabled = cfg.enabled;
     key = cfg.key;
-    if (enabled) scan();
+    if (enabled) {
+      scanText();
+      injectWorker();
+    }
   });
 
-  // react to settings changes
+  // Settings changes
   chrome.storage.onChanged.addListener(changes => {
     if (changes.enabled) enabled = changes.enabled.newValue;
     if (changes.key) key = changes.key.newValue;
-    if (enabled) scan();
+    if (enabled) scanText();
+    
+    // Notify page-worker
+    window.postMessage({
+      source: 'goodbye-ai-block-content',
+      payload: { type: 'az-settings', enabled, key }
+    }, '*');
   });
 
-  // handle messages from popup
-  chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
+  // Messages from popup
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'manual-scan') {
-      scan().then(() => respond({ count: decoded }));
+      scanText();
+      window.postMessage({
+        source: 'goodbye-ai-block-content',
+        payload: { type: 'az-scan' }
+      }, '*');
+      sendResponse({ count: decodedCount });
       return true;
     }
     if (msg.type === 'get-status') {
-      respond({ count: decoded, enabled });
+      sendResponse({ count: decodedCount, enabled });
       return true;
     }
   });
 
-  // -- Scan orchestration --
-
-  async function scan() {
-    if (!enabled) return;
-    await Promise.allSettled([scanImages(), scanText()]);
+  // Inject script into Main World
+  function injectScript(file) {
+    return new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = chrome.runtime.getURL(file);
+      s.onload = () => {
+        s.remove();
+        resolve();
+      };
+      (document.head || document.documentElement).appendChild(s);
+    });
   }
 
-  // -- Image scanning --
+  async function injectWorker() {
+    if (window.azWorkerInjected) return;
+    window.azWorkerInjected = true;
+    
+    // Inject obfuscator first, then page-worker
+    await injectScript('obfuscator.js');
+    await injectScript('page-worker.js');
+  }
 
-  async function scanImages() {
-    const imgs = document.querySelectorAll(`img:not([${ATTR}])`);
-    const tasks = [];
-    for (const img of imgs) {
-      if (img.hasAttribute(ATTR)) continue;
-      if (!img.complete || !img.naturalWidth) {
-        img.addEventListener('load', () => processImage(img), { once: true });
-        continue;
+  // Bridge messages from page-worker
+  window.addEventListener('message', async (e) => {
+    if (e.source !== window || !e.data || e.data.source !== 'goodbye-ai-block-page') return;
+    
+    const msg = e.data.payload;
+    
+    if (msg.type === 'az-ready') {
+      // Worker ready, send initial settings
+      window.postMessage({
+        source: 'goodbye-ai-block-content',
+        payload: { type: 'az-settings', enabled, key }
+      }, '*');
+    }
+    
+    else if (msg.type === 'az-decoded') {
+      // Update badge count. page-worker sends its own decoded count, text scanning has its own.
+      // We should probably just add them up or let page-worker manage its own and we manage ours.
+      // Actually, badge doesn't care if we send it multiple times.
+      decodedCount += 1;
+      chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => {});
+    }
+    
+    else if (msg.type === 'az-fetch-image') {
+      // Proxy fetch request to background script to bypass CORS
+      try {
+        const res = await chrome.runtime.sendMessage({ type: 'fetch-image', url: msg.url });
+        window.postMessage({
+          source: 'goodbye-ai-block-content',
+          payload: { type: 'az-fetch-result', id: msg.id, ...res }
+        }, '*');
+      } catch (err) {
+        window.postMessage({
+          source: 'goodbye-ai-block-content',
+          payload: { type: 'az-fetch-result', id: msg.id, ok: false, error: err.message }
+        }, '*');
       }
-      tasks.push(processImage(img));
     }
-    await Promise.allSettled(tasks);
-  }
+  });
 
-  async function processImage(img) {
-    if (img.hasAttribute(ATTR)) return;
-    img.setAttribute(ATTR, 'checking');
-
-    const w = img.naturalWidth || img.width;
-    const h = img.naturalHeight || img.height;
-    if (w < MIN_SIZE || h < MIN_SIZE) { img.setAttribute(ATTR, 'skip'); return; }
-
-    try {
-      const canvas = await loadImageToCanvas(img);
-      if (!canvas) { img.setAttribute(ATTR, 'skip'); return; }
-
-      const sig = await AZ.detect(canvas);
-      if (!sig) { img.setAttribute(ATTR, 'no-signal'); return; }
-
-      const result = await AZ.deobfuscate(canvas, key);
-      const blob = await new Promise(r => result.toBlob(r, 'image/png'));
-      img.dataset.azOrigSrc = img.src;
-      img.src = URL.createObjectURL(blob);
-      img.setAttribute(ATTR, 'decoded');
-      decoded++;
-      chrome.runtime.sendMessage({ type: 'update-badge', count: decoded });
-    } catch (_) {
-      img.setAttribute(ATTR, 'error');
-    }
-  }
-
-  // -- Text scanning --
-
+  // -- Text scanning (no Xray issues, keep in content script) --
   async function scanText() {
+    if (!enabled || typeof AZ === 'undefined') return;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: node => {
         const tag = node.parentElement?.tagName?.toLowerCase();
@@ -112,84 +135,26 @@
         try {
           updated = updated.replace(m[0], await AZ.deobfuscateText(m[0], key));
           changed = true;
-          decoded++;
+          decodedCount++;
         } catch (_) { /* skip failed matches */ }
       }
       if (changed) {
         node.nodeValue = updated;
         textCache.set(node, updated);
-        chrome.runtime.sendMessage({ type: 'update-badge', count: decoded });
+        chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => {});
       }
     }
   }
 
-  // -- Image loading with CORS fallbacks --
-
-  function loadImageToCanvas(img) {
-    return new Promise(async resolve => {
-      // attempt 1: direct draw
-      try {
-        const c = document.createElement('canvas');
-        c.width = img.naturalWidth || img.width;
-        c.height = img.naturalHeight || img.height;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        ctx.getImageData(0, 0, 1, 1); // taint check
-        resolve(c); return;
-      } catch (_) {}
-
-      // attempt 2: reload with crossOrigin
-      try {
-        const c = await new Promise((ok, fail) => {
-          const i2 = new Image(); i2.crossOrigin = 'anonymous';
-          i2.onload = () => {
-            try {
-              const cv = document.createElement('canvas');
-              cv.width = i2.naturalWidth; cv.height = i2.naturalHeight;
-              const ctx = cv.getContext('2d');
-              ctx.drawImage(i2, 0, 0);
-              ctx.getImageData(0, 0, 1, 1);
-              ok(cv);
-            } catch (e) { fail(e); }
-          };
-          i2.onerror = fail;
-          i2.src = img.src;
-        });
-        resolve(c); return;
-      } catch (_) {}
-
-      // attempt 3: fetch via background service worker
-      try {
-        const c = await new Promise((ok, fail) => {
-          chrome.runtime.sendMessage({ type: 'fetch-image', url: img.src }, res => {
-            if (!res?.ok) { fail(); return; }
-            const i2 = new Image();
-            i2.onload = () => {
-              const cv = document.createElement('canvas');
-              cv.width = i2.naturalWidth; cv.height = i2.naturalHeight;
-              cv.getContext('2d').drawImage(i2, 0, 0);
-              ok(cv);
-            };
-            i2.onerror = fail;
-            i2.src = res.dataUrl;
-          });
-        });
-        resolve(c);
-      } catch (_) { resolve(null); }
-    });
-  }
-
-  // -- MutationObserver: watch for dynamically added content --
-
+  // Watch for text changes dynamically added
   let timer = null;
   const obs = new MutationObserver(() => {
     if (!enabled) return;
     clearTimeout(timer);
-    timer = setTimeout(scan, 500);
+    timer = setTimeout(scanText, 500);
   });
   obs.observe(document.body, {
     childList: true, subtree: true,
-    attributes: true, attributeFilter: ['src'],
     characterData: true,
   });
 })();

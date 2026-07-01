@@ -19,20 +19,18 @@ btnSave.addEventListener('click', () => {
   });
 });
 
-// manual scan
-btnScan.addEventListener('click', () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-    if (!tabs[0]) return;
-    chrome.tabs.sendMessage(tabs[0].id, { type: 'manual-scan' }, res => {
-      stats.textContent = res ? `Decoded: ${res.count}` : 'No response';
-    });
-  });
+// manual scan (Promise-based for cross-browser MV3)
+btnScan.addEventListener('click', async () => {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs[0]) return;
+  const res = await chrome.tabs.sendMessage(tabs[0].id, { type: 'manual-scan' }).catch(() => null);
+  stats.textContent = res ? `Decoded: ${res.count}` : 'No response';
 });
 
-// show current status
-chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+// show current status (Promise-based for cross-browser MV3)
+(async () => {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tabs[0]) return;
-  chrome.tabs.sendMessage(tabs[0].id, { type: 'get-status' }, res => {
-    stats.textContent = res ? `Decoded: ${res.count}` : 'Waiting';
-  });
-});
+  const res = await chrome.tabs.sendMessage(tabs[0].id, { type: 'get-status' }).catch(() => null);
+  stats.textContent = res ? `Decoded: ${res.count}` : 'Waiting';
+})();
