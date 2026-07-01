@@ -1,36 +1,65 @@
 {
   "manifest_version": 3,
   "name": "goodbye-ai-block",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Auto-detect and decode obfuscated images and text",
-  "permissions": ["storage", "activeTab"],
-  "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "goodbye-ai-block@example.com",
+      "id": "goodbye-ai-block@k-atusa.github.io",
       "strict_min_version": "121.0"
     }
   },
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["obfuscator.js", "content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "obfuscator.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["obfuscator.js", "page-worker.js"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "obfuscator.js",
+        "page-worker.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "goodbye-ai-block"
+    "default_title": "goodbye-ai-block",
+    "default_icon": {
+      "16": "icon.png",
+      "32": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
   },
   "options_ui": {
     "page": "options.html",
