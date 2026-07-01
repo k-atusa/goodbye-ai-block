@@ -64,9 +64,9 @@ Click extension icon or go to extension Options to enter and save your Seed.
 ### Image
 
 1. Seed → SHA-256 → PRNG seed
-2. Split into 8×8 blocks → per-block color invert / channel rotate / spatial rotate / flip (PRNG-driven)
+2. Split into 8×8 or 16×16 blocks (auto-scaled) → per-block color invert / channel rotate / spatial rotate / flip
 3. Fisher-Yates shuffle to reorder blocks
-4. Embed magic signal `AI!` in bottom 8px (JPEG-resistant)
+4. Embed 64-bit metadata (signal, version, original resolution) in bottom 4px
 
 ### Text
 
