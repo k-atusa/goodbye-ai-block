@@ -1,5 +1,4 @@
-// page-worker.js — runs in the Main World to bypass Xray Vision blocks on Canvas API
-
+// page-worker.js — Main World script to bypass Xray Vision blocks on Canvas API
 (() => {
   const MIN_SIZE = 64;
   const ATTR = 'data-az-processed';
@@ -10,6 +9,7 @@
   const fetchCallbacks = new Map();
   let fetchIdCounter = 0;
 
+  // Listen for messages from content script
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data || e.data.source !== 'goodbye-ai-block-content') return;
     
@@ -22,17 +22,16 @@
       scanImages();
     } else if (msg.type === 'az-fetch-result') {
       const cb = fetchCallbacks.get(msg.id);
-      if (cb) {
-        cb(msg);
-        fetchCallbacks.delete(msg.id);
-      }
+      if (cb) { cb(msg); fetchCallbacks.delete(msg.id); }
     }
   });
 
+  // Helper to send messages to content script
   function sendMessage(payload) {
     window.postMessage({ source: 'goodbye-ai-block-page', payload }, '*');
   }
 
+  // Request cross-origin fetch via background script
   async function backgroundFetch(url) {
     const id = ++fetchIdCounter;
     return new Promise((resolve) => {
@@ -41,6 +40,7 @@
     });
   }
 
+  // Find and process new images
   async function scanImages() {
     if (!enabled || typeof AZ === 'undefined') return;
     const imgs = document.querySelectorAll(`img:not([${ATTR}])`);
@@ -56,6 +56,7 @@
     await Promise.allSettled(tasks);
   }
 
+  // Decode obfuscated image and replace source
   async function processImage(img) {
     if (img.hasAttribute(ATTR)) return;
     img.setAttribute(ATTR, 'checking');
@@ -66,25 +67,17 @@
 
     try {
       const canvas = await loadImageToCanvas(img);
-      if (!canvas) { 
-        img.setAttribute(ATTR, 'skip'); 
-        return; 
-      }
+      if (!canvas) { img.setAttribute(ATTR, 'skip'); return; }
 
       const sig = await AZ.detect(canvas);
-      if (!sig) { 
-        img.setAttribute(ATTR, 'no-signal'); 
-        return; 
-      }
+      if (!sig) { img.setAttribute(ATTR, 'no-signal'); return; }
 
       const result = await AZ.deobfuscate(canvas, key);
       img.dataset.azOrigSrc = img.src;
 
       try {
         const blob = await new Promise((r, rej) => {
-          try {
-            result.toBlob(r, 'image/png');
-          } catch(e) { rej(e); }
+          try { result.toBlob(r, 'image/png'); } catch(e) { rej(e); }
         });
         if (!blob) throw new Error('toBlob returned null');
         img.src = URL.createObjectURL(blob);
@@ -102,21 +95,20 @@
     }
   }
 
+  // Load image to canvas with fallback strategies
   async function loadImageToCanvas(img) {
-    // attempt 1: direct draw
+    // 1. Direct draw
     try {
       const c = document.createElement('canvas');
       c.width = img.naturalWidth || img.width;
       c.height = img.naturalHeight || img.height;
       const ctx = c.getContext('2d');
       ctx.drawImage(img, 0, 0);
-      ctx.getImageData(0, 0, 1, 1); // taint check
+      ctx.getImageData(0, 0, 1, 1);
       return c;
-    } catch (err) {
-      // ignore
-    }
+    } catch (err) {}
 
-    // attempt 2: reload with crossOrigin
+    // 2. Reload with crossOrigin
     try {
       return await new Promise((ok, fail) => {
         const i2 = new Image(); i2.crossOrigin = 'anonymous';
@@ -126,18 +118,16 @@
             cv.width = i2.naturalWidth; cv.height = i2.naturalHeight;
             const ctx = cv.getContext('2d');
             ctx.drawImage(i2, 0, 0);
-            ctx.getImageData(0, 0, 1, 1); // taint check
+            ctx.getImageData(0, 0, 1, 1);
             ok(cv);
           } catch (e) { fail(e); }
         };
         i2.onerror = (e) => fail(new Error('Image load error'));
         i2.src = img.src;
       });
-    } catch (err) {
-      // ignore
-    }
+    } catch (err) {}
 
-    // attempt 3: fetch via background (Promise-based for cross-browser MV3)
+    // 3. Fetch via background proxy
     try {
       const res = await backgroundFetch(img.src);
       if (!res?.ok) return null;
@@ -161,17 +151,14 @@
     }
   }
 
-  // -- MutationObserver --
+  // Observe DOM for dynamically added images
   let timer = null;
   const obs = new MutationObserver(() => {
     if (!enabled) return;
     clearTimeout(timer);
     timer = setTimeout(scanImages, 500);
   });
-  obs.observe(document.body, {
-    childList: true, subtree: true,
-    attributes: true, attributeFilter: ['src']
-  });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
 
-  sendMessage({ type: 'az-ready' }); // Let content script know we are ready
+  sendMessage({ type: 'az-ready' });
 })();

@@ -20,18 +20,16 @@ extension/            ← Browser extension (Chrome, Firefox, Safari)
   obfuscator.js
   background.js
   content.js
+  page-worker.js      ← Main World script (for image canvas processing)
   popup.html
   options.html
-
-test/
-  index.html          ← Extension test page
 ```
 
 ## Web Tool
 
 1. Open `web/index.html` in a browser
 2. Images: drag/click/paste to upload → click **Convert**
-3. Text: type input → click **Convert** → outputs `AI1(...)` format
+3. Text: type input → click **Convert** → outputs `AI!1(...)` format
 4. Feed obfuscated image/text back in to restore the original
 5. Leave Seed empty for default
 

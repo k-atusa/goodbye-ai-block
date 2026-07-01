@@ -20,18 +20,16 @@ extension/            ← 브라우저 확장 (Chrome, Firefox, Safari)
   obfuscator.js
   background.js
   content.js
+  page-worker.js      ← Main World 스크립트 (이미지 처리용)
   popup.html
   options.html
-
-test/
-  index.html          ← 확장 테스트 페이지
 ```
 
 ## 웹 도구
 
 1. `web/index.html`을 브라우저에서 열기
 2. 이미지: 드래그/클릭/붙여넣기로 업로드 → **Convert** 클릭
-3. 텍스트: 입력 후 **Convert** 클릭 → `AI1(...)` 형태로 출력
+3. 텍스트: 입력 후 **Convert** 클릭 → `AI!1(...)` 형태로 출력
 4. 난독화된 이미지/텍스트를 다시 넣으면 자동으로 원본 복구
 5. Seed를 비워두면 기본값 사용
 
