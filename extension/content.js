@@ -21,7 +21,7 @@
     if (changes.enabled) enabled = changes.enabled.newValue;
     if (changes.key) key = changes.key.newValue;
     if (enabled) scanText();
-    
+
     // Sync settings to page-worker
     window.postMessage({
       source: 'goodbye-ai-block-content',
@@ -64,7 +64,7 @@
   // Handle messages from page-worker
   window.addEventListener('message', async (e) => {
     if (e.source !== window || !e.data || e.data.source !== 'goodbye-ai-block-page') return;
-    
+
     const msg = e.data.payload;
     if (msg.type === 'az-ready') {
       // Send initial settings once ready
@@ -75,7 +75,7 @@
     } else if (msg.type === 'az-decoded') {
       // Update toolbar badge
       decodedCount += 1;
-      chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => { });
     } else if (msg.type === 'az-fetch-image') {
       // Bypass CORS via background script proxy
       try {
@@ -116,12 +116,12 @@
           updated = updated.replace(m[0], await AZ.deobfuscateText(m[0], key));
           changed = true;
           decodedCount++;
-        } catch (_) {}
+        } catch (_) { }
       }
       if (changed) {
         node.nodeValue = updated;
         textCache.set(node, updated);
-        chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => { });
       }
     }
   }
@@ -131,7 +131,10 @@
   const obs = new MutationObserver(() => {
     if (!enabled) return;
     clearTimeout(timer);
-    timer = setTimeout(scanText, 500);
+    timer = setTimeout(() => {
+      scanText();
+      window.postMessage({ source: 'goodbye-ai-block-content', payload: { type: 'az-scan' } }, '*');
+    }, 750);
   });
   obs.observe(document.body, { childList: true, subtree: true, characterData: true });
 })();

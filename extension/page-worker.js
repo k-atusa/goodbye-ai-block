@@ -80,10 +80,14 @@
           try { result.toBlob(r, 'image/png'); } catch(e) { rej(e); }
         });
         if (!blob) throw new Error('toBlob returned null');
-        img.src = URL.createObjectURL(blob);
+        const newSrc = URL.createObjectURL(blob);
+        img.dataset.azDecodedSrc = newSrc;
+        img.src = newSrc;
       } catch (blobErr) {
         console.warn('[goodbye-ai-block] URL.createObjectURL failed, falling back to data URL:', blobErr);
-        img.src = result.toDataURL('image/png');
+        const newSrc = result.toDataURL('image/png');
+        img.dataset.azDecodedSrc = newSrc;
+        img.src = newSrc;
       }
 
       img.setAttribute(ATTR, 'decoded');
@@ -153,8 +157,16 @@
 
   // Observe DOM for dynamically added images
   let timer = null;
-  const obs = new MutationObserver(() => {
+  const obs = new MutationObserver((mutations) => {
     if (!enabled) return;
+    for (const m of mutations) {
+      if (m.type === 'attributes' && m.attributeName === 'src' && m.target.tagName === 'IMG') {
+        const img = m.target;
+        if (img.src && img.src !== img.dataset.azDecodedSrc) {
+          img.removeAttribute(ATTR);
+        }
+      }
+    }
     clearTimeout(timer);
     timer = setTimeout(scanImages, 500);
   });

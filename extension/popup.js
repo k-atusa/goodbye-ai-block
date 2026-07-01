@@ -27,6 +27,11 @@ btnScan.addEventListener('click', async () => {
   stats.textContent = res ? `Decoded: ${res.count}` : 'No response';
 });
 
+// open converter tab
+document.getElementById('btnOpen').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('converter.html') });
+});
+
 // show current status (Promise-based for cross-browser MV3)
 (async () => {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });

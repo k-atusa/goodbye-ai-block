@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>goodbye-ai-block</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #111; color: #ddd; padding: 32px 16px; min-height: 100vh; }
+  .wrap { max-width: 720px; margin: 0 auto; } h1 { font-size: 1.5rem; margin-bottom: 24px; color: #fff; }
+  .seed-row, .tabs, .ctrl, .text-ctrl, .item-head, .item-body, .item-foot, .text-row, #grid { display: flex; gap: 8px; }
+  .seed-row input, .tab, .panel, textarea { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; font-size: .85rem; }
+  .seed-row, .tabs { margin-bottom: 20px; } .seed-row input { flex: 1; color: #fff; padding: 8px 12px; }
+  .tab { color: #888; padding: 8px 20px; cursor: pointer; border-bottom: none; border-radius: 6px 6px 0 0; }
+  .tab.active { background: #222; color: #fff; border-color: #444; }
+  .panel { display: none; background: #222; border-color: #444; border-radius: 0 6px 6px 6px; padding: 20px; } .panel.active { display: block; }
+  button { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: .85rem; font-weight: 600; }
+  button:disabled { opacity: .3; cursor: default; } .btn-pri { background: #c084fc; color: #000; } .btn-sec { background: #333; color: #ccc; }
+  #dropzone { border: 2px dashed #444; border-radius: 8px; padding: 36px 16px; text-align: center; cursor: pointer; color: #888; font-size: .85rem; margin-bottom: 16px; }
+  #dropzone.over { border-color: #c084fc; } .ctrl { flex-wrap: wrap; margin-bottom: 12px; }
+  .status { text-align: center; font-size: .8rem; min-height: 20px; color: #888; margin-bottom: 8px; } .status.err { color: #f87171; } .status.ok { color: #4ade80; }
+  #grid { flex-direction: column; gap: 6px; } .item { background: #1a1a1a; border-radius: 6px; padding: 10px; }
+  .item-head { justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .item-name { font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; } .item-meta { font-size: .7rem; color: #666; }
+  .item-badge { font-size: .65rem; padding: 2px 6px; border-radius: 3px; }
+  .badge-sig { background: #1e293b; color: #7dd3fc; } .badge-done { background: #14532d; color: #4ade80; }
+  .badge-err { background: #450a0a; color: #f87171; } .badge-wait { background: #262626; color: #888; }
+  .item-body { align-items: center; overflow-x: auto; } .item-body canvas { max-height: 80px; max-width: 160px; border-radius: 3px; background: #000; }
+  .arrow { color: #555; } .item-foot { justify-content: flex-end; margin-top: 6px; }
+  .text-row { gap: 12px; } .text-col { flex: 1; min-width: 0; }
+  textarea { width: 100%; height: 180px; color: #eee; padding: 12px; font-family: monospace; resize: vertical; }
+  textarea:focus { outline: none; border-color: #555; } .text-ctrl { justify-content: center; margin-top: 12px; }
+  @media (max-width: 600px) { .text-row { flex-direction: column; } }
+  h2 { font-size: .95rem; margin: 20px 0 8px; color: #aaa; }
+  .info { font-size: .8rem; color: #888; background: #1a1a1a; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .pair { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; } .pair img { border: 1px solid #333; border-radius: 4px; max-width: 250px; }
+  .label { font-size: .7rem; color: #666; }
+  .text-box { background: #1a1a1a; padding: 10px; border-radius: 6px; margin: 8px 0; font-family: monospace; font-size: .8rem; word-break: break-all; }
+  #log { font-size: .75rem; color: #4ade80; margin-top: 16px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>goodbye-ai-block</h1>
+  <div class="seed-row">
+    <input type="text" id="seedInput" placeholder="Seed (leave empty for default)">
+  </div>
+  <div class="tabs">
+    <div class="tab active" data-tab="img-panel">Image</div>
+    <div class="tab" data-tab="txt-panel">Text</div>
+    <div class="tab" data-tab="test-panel">Test</div>
+  </div>
+
+  <!-- image panel -->
+  <div id="img-panel" class="panel active">
+    <div id="dropzone">Drag / click / paste images</div>
+    <input type="file" id="fileInput" accept="image/*" multiple hidden>
+    <div class="ctrl">
+      <button class="btn-pri" id="btnConvert" disabled>Convert</button>
+      <button class="btn-sec" id="btnDlAll" style="display:none">Download All</button>
+      <button class="btn-sec" id="btnClear" style="display:none">Clear</button>
+    </div>
+    <div class="status" id="status"></div>
+    <div id="grid"></div>
+  </div>
+
+  <!-- text panel -->
+  <div id="txt-panel" class="panel">
+    <div class="text-row">
+      <div class="text-col"><textarea id="txtInput" placeholder="Plain text or AI!1(...) input"></textarea></div>
+      <div class="text-col"><textarea id="txtOutput" placeholder="Result" readonly></textarea></div>
+    </div>
+    <div class="text-ctrl">
+      <button class="btn-pri" id="btnTxtConvert">Convert</button>
+      <button class="btn-sec" id="btnTxtCopy">Copy</button>
+      <button class="btn-sec" id="btnTxtClear">Clear</button>
+    </div>
+    <div class="status" id="txtStatus"></div>
+  </div>
+
+  <!-- test panel -->
+  <div id="test-panel" class="panel">
+    <div class="info">If the extension is active, obfuscated images and text below should auto-decode.</div>
+
+    <h2>Image — default seed</h2>
+    <div class="pair">
+      <div><img id="orig1"><div class="label">Original</div></div>
+      <div><img id="obf1"><div class="label">Obfuscated → auto-decode</div></div>
+    </div>
+
+    <h2>Image — seed: hello</h2>
+    <div class="pair">
+      <div><img id="orig2"><div class="label">Original</div></div>
+      <div><img id="obf2"><div class="label">Obfuscated (needs matching seed)</div></div>
+    </div>
+
+    <h2>Text — default seed</h2>
+    <div id="obfText1" class="text-box">Generating...</div>
+
+    <h2>Text — seed: hello</h2>
+    <div id="obfText2" class="text-box">Generating...</div>
+
+    <div id="log"></div>
+  </div>
+</div>
+
+<script src="obfuscator.js"></script>
+<script src="converter.js"></script>
+</body>
+</html>

@@ -12,11 +12,14 @@ Obfuscate images and text to bypass censorship and prevent unauthorized scraping
 
 ```
 web/                  ← Obfuscation/deobfuscation web tool
-  index.html
+  converter.html
+  converter.js
   obfuscator.js       ← Core engine
 
 extension/            ← Browser extension (Chrome, Firefox, Safari)
   manifest.json
+  converter.html      ← Built-in converter page
+  converter.js
   obfuscator.js
   background.js
   content.js
@@ -27,7 +30,7 @@ extension/            ← Browser extension (Chrome, Firefox, Safari)
 
 ## Web Tool
 
-1. Open `web/index.html` in a browser
+1. Open `web/converter.html` in a browser
 2. Images: drag/click/paste to upload → click **Convert**
 3. Text: type input → click **Convert** → outputs `AI!1(...)` format
 4. Feed obfuscated image/text back in to restore the original

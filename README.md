@@ -12,11 +12,14 @@
 
 ```
 web/                  ← 난독화/복호화 웹 도구
-  index.html
+  converter.html
+  converter.js
   obfuscator.js       ← 핵심 엔진
 
 extension/            ← 브라우저 확장 (Chrome, Firefox, Safari)
   manifest.json
+  converter.html      ← 내장 변환기 페이지
+  converter.js
   obfuscator.js
   background.js
   content.js
@@ -27,7 +30,7 @@ extension/            ← 브라우저 확장 (Chrome, Firefox, Safari)
 
 ## 웹 도구
 
-1. `web/index.html`을 브라우저에서 열기
+1. `web/converter.html`을 브라우저에서 열기
 2. 이미지: 드래그/클릭/붙여넣기로 업로드 → **Convert** 클릭
 3. 텍스트: 입력 후 **Convert** 클릭 → `AI!1(...)` 형태로 출력
 4. 난독화된 이미지/텍스트를 다시 넣으면 자동으로 원본 복구
