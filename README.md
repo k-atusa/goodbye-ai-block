@@ -2,11 +2,50 @@
 
 이미지와 텍스트를 난독화하여 검열을 피하고 AI 크롤러의 무단 스크랩을 방지하며, 브라우저 확장으로 자동 복호화합니다.
 
+
 ## 주요 기능
 
 - **검열 우회**: 텍스트와 이미지를 난독화하여 자동화된 검열 및 필터링 시스템을 우회합니다.
 - **무단 스크랩 및 AI 학습 방지**: 원본 데이터를 난독화된 상태로 게시하므로, 크롤러나 AI가 무단으로 콘텐츠를 긁어가거나 학습 데이터로 활용하는 것을 방지합니다.
 - **사용자 편의성**: 확장 프로그램을 설치한 수신자는 별도의 조작 없이 브라우저에서 원래의 깨끗한 콘텐츠를 자동으로 복호화하여 볼 수 있습니다.
+
+### 변환 옵션
+
+- **HTML replace**: 원본 텍스트의 형식을 보존하기 위해 자동으로 줄바꿈과 공백을 삽입합니다.
+- **Convert inputs**: 텍스트 편집창에 입력중인 내용도 인식하고 변환합니다.
+
+### Seed 설정
+
+확장 아이콘 클릭 또는 확장 설정(Options)에서 Seed 입력 후 저장.
+
+
+## 설치 및 사용
+
+### 웹 도구
+
+1. `web/converter.html`을 브라우저에서 열기
+2. 이미지: 드래그/클릭/붙여넣기로 업로드 → **Convert** 클릭
+3. 텍스트: 입력 후 **Convert** 클릭 → `AI!1(...)` 형태로 출력
+4. 난독화된 이미지/텍스트를 다시 넣으면 자동으로 원본 복구
+5. Seed를 비워두면 기본값 사용
+
+### Chrome / Edge / Brave
+
+`chrome://extensions` 열기 → **개발자 모드** → **압축해제된 확장 로드** → `extension/` 선택
+
+### Firefox
+
+`about:debugging#/runtime/this-firefox` → **임시 부가 기능 로드** → `manifest.json` 선택 (121+)
+
+### Safari (macOS / iOS)
+
+`xcrun safari-web-extension-converter ./extension` → Xcode 빌드 → Safari 설정에서 활성화
+
+### Android
+
+- **Kiwi Browser**: 메뉴 → 확장 → `.zip` 로드
+- **Firefox Android**: AMO 또는 부가 기능 컬렉션으로 `.xpi` 로드
+
 
 ## 구조
 
@@ -28,47 +67,14 @@ extension/            ← 브라우저 확장 (Chrome, Firefox, Safari)
   options.html
 ```
 
-## 웹 도구
-
-1. `web/converter.html`을 브라우저에서 열기
-2. 이미지: 드래그/클릭/붙여넣기로 업로드 → **Convert** 클릭
-3. 텍스트: 입력 후 **Convert** 클릭 → `AI!1(...)` 형태로 출력
-4. 난독화된 이미지/텍스트를 다시 넣으면 자동으로 원본 복구
-5. Seed를 비워두면 기본값 사용
-
-## 확장 설치
-
-### Chrome / Edge / Brave
-
-1. `chrome://extensions` 열기 → **개발자 모드** → **압축해제된 확장 로드** → `extension/` 선택
-
-### Firefox
-
-1. `about:debugging#/runtime/this-firefox` → **임시 부가 기능 로드** → `manifest.json` 선택 (121+)
-
-### Safari (macOS / iOS)
-
-1. `xcrun safari-web-extension-converter ./extension` → Xcode 빌드 → Safari 설정에서 활성화
-
-### Android
-
-- **Kiwi Browser**: 메뉴 → 확장 → `.zip` 로드
-- **Firefox Android**: AMO 또는 부가 기능 컬렉션으로 `.xpi` 로드
-
-### Seed 설정
-
-확장 아이콘 클릭 또는 확장 설정(Options)에서 Seed 입력 후 저장.
-
-## 알고리즘
-
-### 이미지
+### 이미지 셔플 알고리즘
 
 1. Seed → SHA-256 → PRNG 시드
 2. 8×8 또는 16×16 블록 분할 (해상도 비례) → 색반전/채널회전/공간회전/플립
 3. Fisher-Yates 셔플로 블록 재배치
 4. 하단 4px에 64비트 메타데이터(시그널, 버전, 원본 해상도) 삽입
 
-### 텍스트
+### 텍스트 셔플 알고리즘
 
 1. Seed → SHA-256 → PRNG 시드
 2. UTF-8 바이트별 XOR + 비트 회전
