@@ -6,7 +6,10 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { width: 260px; padding: 12px; font-family: system-ui, sans-serif; background: #1a1a1a; color: #ddd; font-size: 13px; }
-  h2 { font-size: 14px; margin-bottom: 8px; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .header h2 { font-size: 13px; margin-bottom: 0; }
+  .header-ctrl { display: flex; align-items: center; gap: 6px; }
+  .header-ctrl .toggle-label { font-size: 11px; color: #4ade80; min-width: 44px; }
   .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   label { font-size: 12px; color: #aaa; }
   input[type=text] { flex: 1; background: #222; border: 1px solid #444; color: #fff; padding: 5px 8px; border-radius: 4px; font-size: 12px; }
@@ -20,20 +23,43 @@
   .toggle .slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .2s; }
   .toggle input:checked + .slider { background: #4ade80; }
   .toggle input:checked + .slider::before { transform: translateX(16px); }
+  details.dropdown { margin-bottom: 8px; border: 1px solid #333; border-radius: 4px; background: #222; }
+  details.dropdown summary { padding: 6px 8px; font-size: 12px; color: #aaa; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; list-style: none; }
+  details.dropdown summary::-webkit-details-marker { display: none; }
+  details.dropdown summary:hover { color: #fff; }
+  details.dropdown summary::after { content: '▾'; font-size: 10px; }
+  details.dropdown[open] summary::after { content: '▴'; }
+  details.dropdown .dropdown-menu { padding: 8px; border-top: 1px solid #333; display: flex; flex-direction: column; gap: 8px; }
+  details.dropdown .dropdown-menu .row { margin-bottom: 0; justify-content: space-between; }
   .stats { font-size: 11px; color: #888; margin-top: 6px; text-align: center; }
   hr { border: none; border-top: 1px solid #333; margin: 8px 0; }
 </style>
 </head>
 <body>
-  <h2>goodbye-ai-block</h2>
-  <div class="row">
-    <label>Enabled</label>
-    <label class="toggle"><input type="checkbox" id="toggleEnabled" checked><span class="slider"></span></label>
+  <div class="header">
+    <h2>goodbye-ai-block</h2>
+    <div class="header-ctrl">
+      <label class="toggle"><input type="checkbox" id="toggleEnabled" checked><span class="slider"></span></label>
+      <span class="toggle-label" id="statusEnabled">Enabled</span>
+    </div>
   </div>
   <div class="row">
     <input type="text" id="seedInput" placeholder="Seed (default if empty)">
     <button class="btn-save" id="btnSave">Save</button>
   </div>
+  <details class="dropdown">
+    <summary>Text Options</summary>
+    <div class="dropdown-menu">
+      <div class="row">
+        <label for="toggleHtml">HTML replace</label>
+        <label class="toggle"><input type="checkbox" id="toggleHtml" checked><span class="slider"></span></label>
+      </div>
+      <div class="row">
+        <label for="toggleInputs">Convert inputs</label>
+        <label class="toggle"><input type="checkbox" id="toggleInputs"><span class="slider"></span></label>
+      </div>
+    </div>
+  </details>
   <hr>
   <button class="btn-scan" id="btnScan">Scan</button>
   <button class="btn-open" id="btnOpen">Open Converter</button>

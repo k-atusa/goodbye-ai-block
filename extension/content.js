@@ -3,13 +3,17 @@
   const TEXT_RE = /AI!1\(([^)]+)\)/g;
   let enabled = true;
   let key = '';
+  let htmlReplace = true;
+  let convertInputs = false;
   let decodedCount = 0;
   const textCache = new WeakMap();
 
   // Load extension settings
-  chrome.storage.sync.get({ enabled: true, key: '' }, cfg => {
+  chrome.storage.sync.get({ enabled: true, key: '', htmlReplace: true, convertInputs: false }, cfg => {
     enabled = cfg.enabled;
     key = cfg.key;
+    if (cfg.htmlReplace !== undefined) htmlReplace = cfg.htmlReplace;
+    if (cfg.convertInputs !== undefined) convertInputs = cfg.convertInputs;
     if (enabled) {
       scanText();
       injectWorker();
@@ -20,6 +24,8 @@
   chrome.storage.onChanged.addListener(changes => {
     if (changes.enabled) enabled = changes.enabled.newValue;
     if (changes.key) key = changes.key.newValue;
+    if (changes.htmlReplace) htmlReplace = changes.htmlReplace.newValue;
+    if (changes.convertInputs) convertInputs = changes.convertInputs.newValue;
     if (enabled) scanText();
 
     // Sync settings to page-worker
@@ -87,13 +93,46 @@
     }
   });
 
+  // Check if an element is an input or editable field
+  function isInputElement(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName?.toLowerCase();
+    if (tag === 'textarea' || tag === 'input') return true;
+    return !!el.closest?.('textarea, input, [contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"], [role="textbox"]');
+  }
+
+  // Convert plain text to DOM nodes preserving line breaks and indentation
+  function textToNodes(str) {
+    const frag = document.createDocumentFragment();
+    const lines = str.split(/\r\n|\r|\n/);
+
+    for (let i = 0; i < lines.length; i++) {
+      if (i > 0) frag.appendChild(document.createElement('br'));
+
+      const line = lines[i];
+      if (!line) continue;
+
+      // Preserve indentation and consecutive spaces using non-breaking spaces (\u00a0)
+      const formatted = line
+        .replace(/\t/g, '\u00a0\u00a0\u00a0\u00a0')
+        .replace(/^[ ]+/g, m => '\u00a0'.repeat(m.length))
+        .replace(/ {2}/g, '\u00a0 ');
+
+      frag.appendChild(document.createTextNode(formatted));
+    }
+    return frag;
+  }
+
   // Scan and deobfuscate text nodes
   async function scanText() {
     if (!enabled || typeof AZ === 'undefined') return;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: node => {
-        const tag = node.parentElement?.tagName?.toLowerCase();
-        if (tag === 'script' || tag === 'style' || tag === 'textarea') return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        const tag = parent?.tagName?.toLowerCase();
+        if (tag === 'script' || tag === 'style') return NodeFilter.FILTER_REJECT;
+        if (!convertInputs && isInputElement(parent)) return NodeFilter.FILTER_REJECT;
         return node.nodeValue.includes('AI!1(') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
       }
     });
@@ -102,6 +141,7 @@
     let n; while (n = walker.nextNode()) nodes.push(n);
 
     for (const node of nodes) {
+      if (!node.isConnected) continue;
       const val = node.nodeValue;
       if (textCache.get(node) === val) continue;
       textCache.set(node, val);
@@ -119,8 +159,19 @@
         } catch (_) { }
       }
       if (changed) {
-        node.nodeValue = updated;
-        textCache.set(node, updated);
+        const parent = node.parentElement;
+        const isInput = isInputElement(parent);
+        if (htmlReplace && !isInput && parent) {
+          const fragment = textToNodes(updated);
+          if (node.replaceWith) {
+            node.replaceWith(fragment);
+          } else {
+            parent.replaceChild(fragment, node);
+          }
+        } else {
+          node.nodeValue = updated;
+          textCache.set(node, updated);
+        }
         chrome.runtime.sendMessage({ type: 'update-badge', count: decodedCount }).catch(() => { });
       }
     }

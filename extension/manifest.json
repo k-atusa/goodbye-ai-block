@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "goodbye-ai-block",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Auto-detect and decode obfuscated images and text",
   "icons": {
     "16": "icon.png",
