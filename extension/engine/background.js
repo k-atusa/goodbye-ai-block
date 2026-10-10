@@ -1,15 +1,13 @@
-// background.js — service worker for CORS bypass and badge updates
+// background.js — Service worker: CORS proxy and badge updates.
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // fetch cross-origin images and return as data URL
   if (msg.type === 'fetch-image') {
-    fetchAsDataUrl(msg.url)
+    fetchDataUrl(msg.url)
       .then(dataUrl => sendResponse({ ok: true, dataUrl }))
       .catch(err => sendResponse({ ok: false, error: err.message }));
-    return true; // keep channel open for async response
+    return true;
   }
 
-  // update toolbar badge with decoded count
   if (msg.type === 'update-badge') {
     const tabId = sender.tab?.id;
     if (tabId && chrome.action?.setBadgeText) {
@@ -19,13 +17,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// fetch a URL and convert to base64 data URL
-async function fetchAsDataUrl(url) {
+// Fetch URL → base64 data URL.
+async function fetchDataUrl(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const type = res.headers.get('content-type') || 'image/png';
-  const buf = await res.arrayBuffer();
-  const bytes = new Uint8Array(buf);
+  const bytes = new Uint8Array(await res.arrayBuffer());
   let bin = '';
   for (let i = 0; i < bytes.length; i += 8192)
     bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, bytes.length)));

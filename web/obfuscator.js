@@ -1,13 +1,18 @@
 // Core obfuscation engine using deterministic PRNG.
 
 const AZ = (() => {
-  const MAGIC = [0x41, 0x49, 0x21]; // Magic bytes for signal detection.
-  const HI = 200, LO = 40, TH = 120; // Signal encoding thresholds.
-  const H_SIG = 4; // Metadata signal height.
+
+  // -- Constants --
+
+  const MAGIC = [0x41, 0x49, 0x21];
+  const HI = 200, LO = 40, TH = 120;
+  const H_SIG = 4;
+  const IS_LE = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
+  const INV_MASK = IS_LE ? 0x00FFFFFF : 0xFFFFFF00;
 
   // -- Hashing & PRNG --
 
-  // Pure JS SHA-256 implementation (RFC 6234 standard).
+  // Pure JS SHA-256 (RFC 6234).
   function sha256js(data) {
     const K = [
       0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -65,7 +70,7 @@ const AZ = (() => {
     return out;
   }
 
-  // Return SHA-256 hash with pure JS fallback.
+  // SHA-256 with WebCrypto, pure JS fallback.
   async function hash(str) {
     const data = new TextEncoder().encode(str);
     try {
@@ -100,18 +105,17 @@ const AZ = (() => {
     return p;
   }
 
-  // Compute inverse permutation.
+  // Inverse permutation.
   function invert(p) {
     const inv = new Array(p.length);
     for (let i = 0; i < p.length; i++) inv[p[i]] = i;
     return inv;
   }
 
-  // -- Block Transform Utilities (32-bit, 1-pass) --
-  const IS_LE = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
-  const INV_MASK = IS_LE ? 0x00FFFFFF : 0xFFFFFF00;
+  // -- Pixel transforms (32-bit, endian-aware) --
 
-  function applyColorTransform(px, inv, ch) {
+  // Forward color channel rotation + optional inversion.
+  function colorFwd(px, inv, ch) {
     if (inv) px ^= INV_MASK;
     if (ch === 1) {
       return IS_LE
@@ -125,17 +129,26 @@ const AZ = (() => {
     return px;
   }
 
-  function reverseColorTransform(px, inv, ch) {
+  // Reverse color channel rotation + optional inversion.
+  function colorRev(px, inv, ch) {
     let p = px;
-    if (ch === 1) p = applyColorTransform(p, false, 2);
-    else if (ch === 2) p = applyColorTransform(p, false, 1);
+    if (ch === 1) p = colorFwd(p, false, 2);
+    else if (ch === 2) p = colorFwd(p, false, 1);
     if (inv) p ^= INV_MASK;
     return p;
   }
 
-  // -- Signal encoding --
-  // Embed 64-bit metadata signal.
-  function embedSignal(data, w, h, origW, origH, B, VER) {
+  // -- Signal I/O --
+
+  // Compute encoded canvas dimensions from original content size.
+  function encDims(origW, origH, B) {
+    const nw = Math.max(Math.ceil(origW / B) * B, 64);
+    const nh = Math.ceil(origH / B) * B + H_SIG;
+    return { nw, nh };
+  }
+
+  // Write 64-bit metadata signal to bottom rows.
+  function writeSig(data, w, h, origW, origH, B, VER) {
     const bytes = [
       MAGIC[0], MAGIC[1], MAGIC[2], VER,
       (origW >> 8) & 0xFF, origW & 0xFF,
@@ -164,8 +177,8 @@ const AZ = (() => {
     }
   }
 
-  // Read 64-bit metadata signal.
-  function readSignal(data, w, h) {
+  // Read 64-bit metadata signal from bottom rows.
+  function readSig(data, w, h) {
     if (w < 64 || h < H_SIG) return null;
     const step = Math.floor(w / 64);
     const bits = [];
@@ -205,42 +218,20 @@ const AZ = (() => {
     return { ver, origW, origH, B };
   }
 
-  // -- Image obfuscation --
+  // -- Block transforms --
 
-  // Obfuscate image with blocks and signal.
-  async function obfuscate(srcCanvas, key) {
-    if (key === undefined || key === null) key = '';
-    const ow = srcCanvas.width, oh = srcCanvas.height;
-    const B = (ow >= 1000 && oh >= 1000) ? 16 : 8;
-    const VER = (B === 16) ? 2 : 1;
-    const nw = Math.max(Math.ceil(ow / B) * B, 64);
-    const nh = Math.ceil(oh / B) * B + H_SIG;
-
-    const c = document.createElement('canvas');
-    c.width = nw; c.height = nh;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, nw, nh);
-    ctx.drawImage(srcCanvas, 0, 0);
-
-    const ch = nh - H_SIG; // Content height.
-    const id = ctx.getImageData(0, 0, nw, ch);
-    const d = id.data;
-    const seed = await hash(key);
-    const rng = prng(seed);
-    const bw = nw / B, n = bw * (ch / B);
-
-    // Generate transforms.
+  // Generate per-block transform params from PRNG.
+  function genXforms(n, rng) {
     const xforms = [];
     for (let i = 0; i < n; i++)
       xforms.push({ inv: rng() > 0.5, ch: (rng() * 3) | 0, sp: (rng() * 4) | 0, fl: rng() > 0.5 });
+    return xforms;
+  }
 
-    const perm = shuffle(n, rng);
-
-    // Transform and write blocks in 1-pass.
-    const rd = new Uint8ClampedArray(d.length);
-    const src32 = new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4);
-    const dst32 = new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4);
+  // Forward block transform: shuffle + rotate/flip + color.
+  function blockFwd(src32, dst32, nw, contentH, B, xforms, perm) {
+    const bw = nw / B;
+    const n = bw * (contentH / B);
 
     for (let i = 0; i < n; i++) {
       const S = perm[i], D = i;
@@ -251,9 +242,7 @@ const AZ = (() => {
       for (let y = 0; y < B; y++) {
         for (let x = 0; x < B; x++) {
           const si = (sby * B + y) * nw + (sbx * B + x);
-          let px = src32[si];
-
-          px = applyColorTransform(px, t.inv, t.ch);
+          let px = colorFwd(src32[si], t.inv, t.ch);
 
           let cx = x, cy = y;
           for (let r = 0; r < t.sp; r++) {
@@ -262,59 +251,28 @@ const AZ = (() => {
           }
           if (t.fl) cx = B - 1 - cx;
 
-          const di = (dby * B + cy) * nw + (dbx * B + cx);
-          dst32[di] = px;
+          dst32[(dby * B + cy) * nw + (dbx * B + cx)] = px;
         }
       }
     }
-
-    ctx.putImageData(new ImageData(rd, nw, ch), 0, 0);
-    const full = ctx.getImageData(0, 0, nw, nh);
-    embedSignal(full.data, nw, nh, ow, oh, B, VER);
-    ctx.putImageData(full, 0, 0);
-    return c;
   }
 
-  // Deobfuscate image.
-  async function deobfuscate(srcCanvas, key) {
-    if (key === undefined || key === null) key = '';
-    const w = srcCanvas.width, h = srcCanvas.height;
-    const ctx = srcCanvas.getContext('2d');
-
-    const full = ctx.getImageData(0, 0, w, h);
-    const sig = readSignal(full.data, w, h);
-    if (!sig) throw new Error('No signal found');
-
-    const B = sig.B;
-    const ch = h - H_SIG;
-    const d = ctx.getImageData(0, 0, w, ch).data;
-    const seed = await hash(key);
-    const rng = prng(seed);
-    const bw = w / B, n = bw * (ch / B);
-
-    // Replay PRNG sequence.
-    const xforms = [];
-    for (let i = 0; i < n; i++)
-      xforms.push({ inv: rng() > 0.5, ch: (rng() * 3) | 0, sp: (rng() * 4) | 0, fl: rng() > 0.5 });
-    const perm = shuffle(n, rng);
+  // Inverse block transform: unshuffle + reverse rotate/flip + color.
+  function blockRev(src32, dst32, nw, contentH, B, xforms, perm) {
     const inv = invert(perm);
-
-    // Reverse transforms and unshuffle blocks in 1-pass.
-    const rd = new Uint8ClampedArray(d.length);
-    const src32 = new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4);
-    const dst32 = new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4);
+    const bw = nw / B;
+    const n = bw * (contentH / B);
 
     for (let j = 0; j < n; j++) {
       const S = inv[j], D = j;
       const t = xforms[j];
       const sbx = S % bw, sby = (S / bw) | 0;
       const dbx = D % bw, dby = (D / bw) | 0;
-
       const rot = (4 - t.sp) % 4;
 
       for (let y = 0; y < B; y++) {
         for (let x = 0; x < B; x++) {
-          const si = (sby * B + y) * w + (sbx * B + x);
+          const si = (sby * B + y) * nw + (sbx * B + x);
           let px = src32[si];
 
           let cx = x, cy = y;
@@ -324,25 +282,107 @@ const AZ = (() => {
             cy = cx; cx = nx;
           }
 
-          px = reverseColorTransform(px, t.inv, t.ch);
-
-          const di = (dby * B + cy) * w + (dbx * B + cx);
-          dst32[di] = px;
+          dst32[(dby * B + cy) * nw + (dbx * B + cx)] = colorRev(px, t.inv, t.ch);
         }
       }
     }
+  }
 
-    // Crop to original size.
+  // -- Image encode/decode --
+
+  // Encode: block-scramble image and embed signal.
+  async function obfuscate(srcCanvas, key) {
+    if (key === undefined || key === null) key = '';
+    const ow = srcCanvas.width, oh = srcCanvas.height;
+    const B = (ow >= 1000 && oh >= 1000) ? 16 : 8;
+    const VER = (B === 16) ? 2 : 1;
+    const { nw, nh } = encDims(ow, oh, B);
+
+    // Pad source to block-aligned canvas.
+    const c = document.createElement('canvas');
+    c.width = nw; c.height = nh;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, nw, nh);
+    ctx.drawImage(srcCanvas, 0, 0);
+
+    // Read content region.
+    const contentH = nh - H_SIG;
+    const d = ctx.getImageData(0, 0, nw, contentH).data;
+    const seed = await hash(key);
+    const rng = prng(seed);
+    const bw = nw / B, n = bw * (contentH / B);
+
+    // Generate transforms and permutation.
+    const xforms = genXforms(n, rng);
+    const perm = shuffle(n, rng);
+
+    // Forward block transform.
+    const rd = new Uint8ClampedArray(d.length);
+    const src32 = new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4);
+    const dst32 = new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4);
+    blockFwd(src32, dst32, nw, contentH, B, xforms, perm);
+
+    // Write result and embed signal.
+    ctx.putImageData(new ImageData(rd, nw, contentH), 0, 0);
+    const full = ctx.getImageData(0, 0, nw, nh);
+    writeSig(full.data, nw, nh, ow, oh, B, VER);
+    ctx.putImageData(full, 0, 0);
+    return c;
+  }
+
+  // Decode: detect resize, restore dimensions, inverse block transform.
+  async function deobfuscate(srcCanvas, key) {
+    if (key === undefined || key === null) key = '';
+    const curW = srcCanvas.width, curH = srcCanvas.height;
+    const ctx = srcCanvas.getContext('2d');
+
+    // Read signal from current (possibly resized) image.
+    const full = ctx.getImageData(0, 0, curW, curH);
+    const sig = readSig(full.data, curW, curH);
+    if (!sig) throw new Error('No signal found');
+
+    const B = sig.B;
+    const { nw, nh } = encDims(sig.origW, sig.origH, B);
+    const contentH = nh - H_SIG;
+
+    // Detect resize and restore to encoded dimensions if needed.
+    const resized = (curW !== nw || curH !== nh);
+    let workData;
+    if (resized) {
+      const tmp = document.createElement('canvas');
+      tmp.width = nw; tmp.height = nh;
+      tmp.getContext('2d').drawImage(srcCanvas, 0, 0, nw, nh);
+      workData = tmp.getContext('2d').getImageData(0, 0, nw, contentH).data;
+    } else {
+      workData = ctx.getImageData(0, 0, nw, contentH).data;
+    }
+
+    // Replay PRNG at original encoded dimensions.
+    const seed = await hash(key);
+    const rng = prng(seed);
+    const bw = nw / B, n = bw * (contentH / B);
+    const xforms = genXforms(n, rng);
+    const perm = shuffle(n, rng);
+
+    // Inverse block transform.
+    const rd = new Uint8ClampedArray(workData.length);
+    const src32 = new Uint32Array(workData.buffer, workData.byteOffset, workData.byteLength / 4);
+    const dst32 = new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4);
+    blockRev(src32, dst32, nw, contentH, B, xforms, perm);
+
+    // Crop to original content size.
     const tmp = document.createElement('canvas');
-    tmp.width = w; tmp.height = ch;
-    tmp.getContext('2d').putImageData(new ImageData(rd, w, ch), 0, 0);
+    tmp.width = nw; tmp.height = contentH;
+    tmp.getContext('2d').putImageData(new ImageData(rd, nw, contentH), 0, 0);
+
     const out = document.createElement('canvas');
     out.width = sig.origW; out.height = sig.origH;
     out.getContext('2d').drawImage(tmp, 0, 0, sig.origW, sig.origH, 0, 0, sig.origW, sig.origH);
     return out;
   }
 
-  // Detect signal in image.
+  // Detect signal in any image or canvas element.
   async function detect(imgOrCanvas) {
     const c = document.createElement('canvas');
     if (imgOrCanvas instanceof HTMLCanvasElement) {
@@ -353,20 +393,20 @@ const AZ = (() => {
       c.height = imgOrCanvas.naturalHeight || imgOrCanvas.height;
       c.getContext('2d').drawImage(imgOrCanvas, 0, 0);
     }
-    return readSignal(c.getContext('2d').getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+    return readSig(c.getContext('2d').getImageData(0, 0, c.width, c.height).data, c.width, c.height);
   }
 
-  // -- Text obfuscation --
+  // -- Text encode/decode --
 
-  // Convert bytes to base64.
-  function bytesToBase64(bytes) {
+  // Bytes → base64.
+  function toB64(bytes) {
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
     return btoa(bin);
   }
 
-  // Convert base64 to bytes.
-  function base64ToBytes(b64) {
+  // Base64 → bytes.
+  function fromB64(b64) {
     const clean = b64.replace(/[^A-Za-z0-9+/=]/g, '');
     const bin = atob(clean);
     const out = new Uint8Array(bin.length);
@@ -374,7 +414,7 @@ const AZ = (() => {
     return out;
   }
 
-  // Obfuscate text.
+  // Encode text with XOR + bitwise rotation.
   async function obfuscateText(text, key) {
     if (key === undefined || key === null) key = '';
     const seed = await hash(key);
@@ -388,15 +428,15 @@ const AZ = (() => {
       b = ((b << r) | (b >>> (8 - r))) & 0xFF;
       out[i] = b;
     }
-    return `AI!1(${bytesToBase64(out)})`;
+    return `AI!1(${toB64(out)})`;
   }
 
-  // Deobfuscate text.
+  // Decode text with reverse bitwise rotation + XOR.
   async function deobfuscateText(str, key) {
     if (key === undefined || key === null) key = '';
     const match = str.match(/AI!1\(([^)]+)\)/);
     if (!match) throw new Error('No AI!1(...) signature found');
-    const data = base64ToBytes(match[1]);
+    const data = fromB64(match[1]);
     const seed = await hash(key);
     const rng = prng(seed);
     const out = new Uint8Array(data.length);
@@ -411,5 +451,7 @@ const AZ = (() => {
     return new TextDecoder().decode(out);
   }
 
-  return { obfuscate, deobfuscate, detect, readSignal, obfuscateText, deobfuscateText };
+  // -- Public API --
+
+  return { obfuscate, deobfuscate, detect, readSignal: readSig, obfuscateText, deobfuscateText };
 })();

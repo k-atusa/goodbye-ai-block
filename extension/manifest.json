@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "goodbye-ai-block",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Auto-detect and decode obfuscated images and text",
   "icons": {
     "16": "icon.png",
@@ -29,9 +29,9 @@
     "gecko_android": {}
   },
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "engine/background.js",
     "scripts": [
-      "background.js"
+      "engine/background.js"
     ]
   },
   "content_scripts": [
@@ -40,8 +40,8 @@
         "<all_urls>"
       ],
       "js": [
-        "obfuscator.js",
-        "content.js"
+        "engine/obfuscator.js",
+        "engine/content.js"
       ],
       "run_at": "document_idle"
     }
@@ -49,8 +49,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "obfuscator.js",
-        "page-worker.js"
+        "engine/obfuscator.js",
+        "engine/page-worker.js"
       ],
       "matches": [
         "<all_urls>"
