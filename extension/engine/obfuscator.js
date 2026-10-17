@@ -289,39 +289,51 @@ const AZ = (() => {
     return xf;
   }
 
-  function blockFwd(src32, dst32, nw, ch, xf, perm) {
+  async function blockFwd(src32, dst32, nw, ch, xf, perm) {
     const bw = nw / B, n = bw * (ch / B);
+    const step = Math.max(500, (n / 10) | 0);
     for (let i = 0; i < n; i++) {
       const S = perm[i], D = i, t = xf[S];
       const sbx = S % bw, sby = (S / bw) | 0;
       const dbx = D % bw, dby = (D / bw) | 0;
-      for (let y = 0; y < B; y++)
+      for (let y = 0; y < B; y++) {
+        const sOff = (sby * B + y) * nw + sbx * B;
         for (let x = 0; x < B; x++) {
-          let px = colorFwd(src32[(sby * B + y) * nw + sbx * B + x], t.inv, t.ch);
+          let px = colorFwd(src32[sOff + x], t.inv, t.ch);
           let cx = x, cy = y;
           for (let r = 0; r < t.sp; r++) { let nx = B - 1 - cy; cy = cx; cx = nx; }
           if (t.fl) cx = B - 1 - cx;
           dst32[(dby * B + cy) * nw + dbx * B + cx] = px;
         }
+      }
+      if (i > 0 && i % step === 0) {
+        await new Promise(r => setTimeout(r, 0));
+      }
     }
   }
 
-  function blockRev(src32, dst32, nw, ch, xf, perm) {
+  async function blockRev(src32, dst32, nw, ch, xf, perm) {
     const inv = invert(perm);
     const bw = nw / B, n = bw * (ch / B);
+    const step = Math.max(500, (n / 10) | 0);
     for (let j = 0; j < n; j++) {
       const S = inv[j], D = j, t = xf[j];
       const sbx = S % bw, sby = (S / bw) | 0;
       const dbx = D % bw, dby = (D / bw) | 0;
       const rot = (4 - t.sp) % 4;
-      for (let y = 0; y < B; y++)
+      for (let y = 0; y < B; y++) {
+        const sOff = (sby * B + y) * nw + sbx * B;
         for (let x = 0; x < B; x++) {
-          let px = src32[(sby * B + y) * nw + sbx * B + x];
+          let px = src32[sOff + x];
           let cx = x, cy = y;
           if (t.fl) cx = B - 1 - cx;
           for (let r = 0; r < rot; r++) { let nx = B - 1 - cy; cy = cx; cx = nx; }
           dst32[(dby * B + cy) * nw + dbx * B + cx] = colorRev(px, t.inv, t.ch);
         }
+      }
+      if (j > 0 && j % step === 0) {
+        await new Promise(r => setTimeout(r, 0));
+      }
     }
   }
 
@@ -348,7 +360,7 @@ const AZ = (() => {
     const perm = shuffle(n, rng);
 
     const rd = new Uint8ClampedArray(d.length);
-    blockFwd(
+    await blockFwd(
       new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4),
       new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4),
       nw, contentH, xf, perm
@@ -361,7 +373,7 @@ const AZ = (() => {
     return c;
   }
 
-  async function deobfuscate(input, key) {
+  async function deobfuscate(input, key, opts = {}) {
     if (key == null) key = '';
     const srcCanvas = toCanvas(input);
     const curW = srcCanvas.width, curH = srcCanvas.height;
@@ -396,26 +408,35 @@ const AZ = (() => {
     const perm = shuffle(n, rng);
 
     const rd = new Uint8ClampedArray(workData.length);
-    blockRev(
+    await blockRev(
       new Uint32Array(workData.buffer, workData.byteOffset, workData.byteLength / 4),
       new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4),
       nw, contentH, xf, perm
     );
 
-    // 3. 원본 해상도 매핑 (이미 정수 패딩과 동일하면 캔버스 복사 생략)
+    // 3. 원본 해상도 매핑 및 바뀐 가로 크기(targetWidth) 기준 축소 보정
+    let outW = sig.origW, outH = sig.origH;
+    if (opts.targetWidth && opts.targetWidth > 0 && opts.targetWidth !== sig.origW) {
+      outW = opts.targetWidth;
+      outH = Math.round((sig.origH * outW) / sig.origW);
+    }
+
     const workCanvas = document.createElement('canvas');
     workCanvas.width = nw;
     workCanvas.height = contentH;
     workCanvas.getContext('2d').putImageData(new ImageData(rd, nw, contentH), 0, 0);
 
-    if (nw === sig.origW && contentH === sig.origH) {
+    if (nw === outW && contentH === outH) {
       return workCanvas;
     }
 
     const out = document.createElement('canvas');
-    out.width = sig.origW;
-    out.height = sig.origH;
-    out.getContext('2d').drawImage(workCanvas, 0, 0, sig.origW, sig.origH, 0, 0, sig.origW, sig.origH);
+    out.width = outW;
+    out.height = outH;
+    const outCtx = out.getContext('2d');
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+    outCtx.drawImage(workCanvas, 0, 0, sig.origW, sig.origH, 0, 0, outW, outH);
 
     return out;
   }

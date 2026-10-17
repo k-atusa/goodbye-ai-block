@@ -59,12 +59,13 @@ extension/            ← 브라우저 확장 (Chrome, Firefox, Safari)
   manifest.json
   converter.html      ← 내장 변환기 페이지
   converter.js
-  obfuscator.js
-  background.js
-  content.js
-  page-worker.js      ← Main World 스크립트 (이미지 처리용)
   popup.html
   options.html
+  engine/
+    obfuscator.js     ← 핵심 엔진
+    background.js
+    content.js
+    page-worker.js    ← Main World 스크립트 (이미지 처리용)
 ```
 
 ### 이미지 셔플 알고리즘

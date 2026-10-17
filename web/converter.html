@@ -6,8 +6,8 @@
 <title>goodbye-ai-block</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #111; color: #ddd; padding: 32px 16px; min-height: 100vh; }
-  .wrap { max-width: 720px; margin: 0 auto; } h1 { font-size: 1.5rem; margin-bottom: 24px; color: #fff; }
+  body { font-family: system-ui, sans-serif; background: #111; color: #ddd; padding: 32px 16px; min-height: 100vh; max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 24px; color: #fff; }
   .seed-row, .tabs, .ctrl, .text-ctrl, .item-head, .item-body, .item-foot, .text-row, #grid { display: flex; gap: 8px; }
   .seed-row input, .tab, .panel, textarea { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; font-size: .85rem; }
   .seed-row, .tabs { margin-bottom: 20px; } .seed-row input { flex: 1; color: #fff; padding: 8px 12px; }
@@ -40,7 +40,6 @@
 </style>
 </head>
 <body>
-<div class="wrap">
   <h1>goodbye-ai-block</h1>
   <div class="seed-row">
     <input type="text" id="seedInput" placeholder="Seed (leave empty for default)">
@@ -102,7 +101,6 @@
 
     <div id="log"></div>
   </div>
-</div>
 
 <script src="obfuscator.js"></script>
 <script src="converter.js"></script>

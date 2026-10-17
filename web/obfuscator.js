@@ -1,19 +1,34 @@
-// Core obfuscation engine using deterministic PRNG.
+// Core obfuscation engine using deterministic PRNG (Image Version: 3, Text Version: 1)
 
 const AZ = (() => {
 
   // -- Constants --
 
-  const MAGIC = [0x41, 0x49, 0x21];
+  const MAGIC = [0x41, 0x49, 0x21]; // 'AI!'
   const HI = 200, LO = 40, TH = 120;
-  const H_SIG = 4;
+  const H_SIG = 20; // 신호 바 높이 (4px 검정 앵커 + 8px 상단 32비트 + 8px 하단 32비트)
+  const B = 16;     // 16x16 고정 블록 크기
+  const VER = 3;    // 이미지 난독화 버전 3
   const IS_LE = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
   const INV_MASK = IS_LE ? 0x00FFFFFF : 0xFFFFFF00;
 
+  // -- Helpers --
+
+  function toCanvas(el) {
+    if (el instanceof HTMLCanvasElement) return el;
+    const c = document.createElement('canvas');
+    const w = el.naturalWidth || el.width || 0;
+    const h = el.naturalHeight || el.height || 0;
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(el, 0, 0);
+    return c;
+  }
+
   // -- Hashing & PRNG --
 
-  // Pure JS SHA-256 (RFC 6234).
-  function sha256js(data) {
+  function sha256(data) {
     const K = [
       0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
       0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -62,24 +77,22 @@ const AZ = (() => {
     }
 
     const out = new Uint8Array(32);
-    const outView = new DataView(out.buffer);
-    outView.setUint32(0, h0); outView.setUint32(4, h1);
-    outView.setUint32(8, h2); outView.setUint32(12, h3);
-    outView.setUint32(16, h4); outView.setUint32(20, h5);
-    outView.setUint32(24, h6); outView.setUint32(28, h7);
+    const ov = new DataView(out.buffer);
+    ov.setUint32(0, h0); ov.setUint32(4, h1);
+    ov.setUint32(8, h2); ov.setUint32(12, h3);
+    ov.setUint32(16, h4); ov.setUint32(20, h5);
+    ov.setUint32(24, h6); ov.setUint32(28, h7);
     return out;
   }
 
-  // SHA-256 with WebCrypto, pure JS fallback.
   async function hash(str) {
     const data = new TextEncoder().encode(str);
     try {
       if (crypto?.subtle?.digest) return new Uint8Array(await crypto.subtle.digest('SHA-256', data));
     } catch (_) { }
-    return sha256js(data);
+    return sha256(data);
   }
 
-  // Mulberry32 PRNG returning [0,1).
   function prng(seed) {
     let s = 0;
     for (let i = 0; i < seed.length; i += 4)
@@ -95,7 +108,6 @@ const AZ = (() => {
 
   // -- Permutation --
 
-  // Fisher-Yates shuffle.
   function shuffle(n, rng) {
     const p = Array.from({ length: n }, (_, i) => i);
     for (let i = n - 1; i > 0; i--) {
@@ -105,16 +117,14 @@ const AZ = (() => {
     return p;
   }
 
-  // Inverse permutation.
   function invert(p) {
     const inv = new Array(p.length);
     for (let i = 0; i < p.length; i++) inv[p[i]] = i;
     return inv;
   }
 
-  // -- Pixel transforms (32-bit, endian-aware) --
+  // -- Pixel color transforms --
 
-  // Forward color channel rotation + optional inversion.
   function colorFwd(px, inv, ch) {
     if (inv) px ^= INV_MASK;
     if (ch === 1) {
@@ -129,7 +139,6 @@ const AZ = (() => {
     return px;
   }
 
-  // Reverse color channel rotation + optional inversion.
   function colorRev(px, inv, ch) {
     let p = px;
     if (ch === 1) p = colorFwd(p, false, 2);
@@ -140,15 +149,13 @@ const AZ = (() => {
 
   // -- Signal I/O --
 
-  // Compute encoded canvas dimensions from original content size.
-  function encDims(origW, origH, B) {
+  function encDims(origW, origH) {
     const nw = Math.max(Math.ceil(origW / B) * B, 64);
     const nh = Math.ceil(origH / B) * B + H_SIG;
     return { nw, nh };
   }
 
-  // Write 64-bit metadata signal to bottom rows.
-  function writeSig(data, w, h, origW, origH, B, VER) {
+  function writeSig(data, w, h, origW, origH) {
     const bytes = [
       MAGIC[0], MAGIC[1], MAGIC[2], VER,
       (origW >> 8) & 0xFF, origW & 0xFF,
@@ -156,54 +163,104 @@ const AZ = (() => {
     ];
 
     const bits = [];
-    for (let byteIdx = 0; byteIdx < 8; byteIdx++) {
-      const byte = bytes[byteIdx];
-      for (let bitIdx = 0; bitIdx < 8; bitIdx++) {
-        bits.push((byte >> (7 - bitIdx)) & 1);
+    for (let i = 0; i < 8; i++)
+      for (let j = 0; j < 8; j++)
+        bits.push((bytes[i] >> (7 - j)) & 1);
+
+    // 4px 검정 앵커 라인 (y: h - 20 ~ h - 16)
+    for (let row = h - 20; row < h - 16; row++) {
+      for (let col = 0; col < w; col++) {
+        const i = (row * w + col) * 4;
+        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 255;
       }
     }
 
-    const step = Math.floor(w / 64);
-    for (let bitIdx = 0; bitIdx < 64; bitIdx++) {
-      const v = bits[bitIdx] ? HI : LO;
-      const startX = bitIdx * step;
-      const endX = startX + step;
-      for (let row = h - H_SIG; row < h; row++) {
-        for (let col = startX; col < endX; col++) {
-          const i = (row * w + col) * 4;
-          data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    function writeRowBits(rowStart, rowEnd, bitSlice) {
+      for (let bi = 0; bi < 32; bi++) {
+        const v = bitSlice[bi] ? HI : LO;
+        const x1 = Math.floor((bi * w) / 32.0);
+        const x2 = Math.floor(((bi + 1) * w) / 32.0);
+
+        for (let row = rowStart; row < rowEnd; row++) {
+          for (let col = x1; col < x2; col++) {
+            const i = (row * w + col) * 4;
+            data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+          }
         }
       }
     }
+
+    writeRowBits(h - 16, h - 8, bits.slice(0, 32));  // Row A: Bit 0 ~ 31
+    writeRowBits(h - 8, h, bits.slice(32, 64));      // Row B: Bit 32 ~ 63
   }
 
-  // Read 64-bit metadata signal from bottom rows.
   function readSig(data, w, h) {
-    if (w < 64 || h < H_SIG) return null;
-    const step = Math.floor(w / 64);
-    const bits = [];
-    for (let bitIdx = 0; bitIdx < 64; bitIdx++) {
-      const startX = bitIdx * step;
-      const endX = startX + step;
-      let sum = 0;
-      for (let row = h - H_SIG; row < h; row++) {
-        for (let col = startX; col < endX; col++) {
-          const i = (row * w + col) * 4;
-          sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
-        }
+    if (w < 32 || h < 20) return null;
+
+    let anchorY = -1;
+    for (let y = h - 1; y >= 16; y--) {
+      let rSum = 0, gSum = 0, bSum = 0;
+      const sampleStep = Math.max(1, Math.floor(w / 64));
+      let count = 0;
+      for (let x = 0; x < w; x += sampleStep) {
+        const idx = (y * w + x) * 4;
+        rSum += data[idx]; gSum += data[idx + 1]; bSum += data[idx + 2];
+        count++;
       }
-      const avg = sum / (step * H_SIG);
-      bits.push(avg > TH ? 1 : 0);
+      const avgBrightness = (rSum + gSum + bSum) / (count * 3);
+
+      if (avgBrightness < 20.0) {
+        anchorY = y;
+        break;
+      }
     }
 
-    const bytes = new Uint8Array(8);
-    for (let byteIdx = 0; byteIdx < 8; byteIdx++) {
-      let byte = 0;
-      for (let bitIdx = 0; bitIdx < 8; bitIdx++) {
-        const bit = bits[byteIdx * 8 + bitIdx];
-        byte = (byte << 1) | bit;
+    const rowA_StartY = anchorY !== -1 ? anchorY + 1 : Math.floor(h - 16);
+    const rowA_EndY = rowA_StartY + Math.max(2, Math.floor((h - rowA_StartY) / 2));
+    const rowB_EndY = h;
+
+    function readRowBits(yStart, yEnd) {
+      const bitVals = new Float32Array(32);
+      let minV = 255.0, maxV = 0.0;
+
+      for (let bi = 0; bi < 32; bi++) {
+        const sx = (bi * w) / 32.0;
+        const ex = ((bi + 1) * w) / 32.0;
+        const wCell = ex - sx;
+
+        const cx1 = Math.floor(sx + wCell * 0.25);
+        const cx2 = Math.max(cx1 + 1, Math.ceil(ex - wCell * 0.25));
+
+        let cellSum = 0, cellCount = 0;
+        for (let y = yStart; y < yEnd; y++) {
+          for (let x = cx1; x < cx2; x++) {
+            const idx = (y * w + x) * 4;
+            cellSum += (data[idx] + data[idx + 1] + data[idx + 2]) / 3.0;
+            cellCount++;
+          }
+        }
+
+        const avg = cellCount > 0 ? cellSum / cellCount : 120.0;
+        bitVals[bi] = avg;
+        if (avg < minV) minV = avg;
+        if (avg > maxV) maxV = avg;
       }
-      bytes[byteIdx] = byte;
+
+      const th = (maxV - minV) > 30 ? (minV + maxV) / 2.0 : 120.0;
+      return Array.from(bitVals).map(v => (v > th ? 1 : 0));
+    }
+
+    const bitsA = readRowBits(rowA_StartY, rowA_EndY);
+    const bitsB = readRowBits(rowA_EndY, rowB_EndY);
+    const bits = bitsA.concat(bitsB);
+
+    const bytes = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) {
+      let b = 0;
+      for (let j = 0; j < 8; j++) {
+        b = (b << 1) | bits[i * 8 + j];
+      }
+      bytes[i] = b;
     }
 
     if (bytes[0] !== MAGIC[0] || bytes[1] !== MAGIC[1] || bytes[2] !== MAGIC[2]) {
@@ -213,92 +270,82 @@ const AZ = (() => {
     const ver = bytes[3];
     const origW = (bytes[4] << 8) | bytes[5];
     const origH = (bytes[6] << 8) | bytes[7];
-    const B = (ver === 2) ? 16 : 8;
 
-    return { ver, origW, origH, B };
+    return {
+      ver: ver,
+      origW: origW,
+      origH: origH,
+      B: B,
+      bytes: bytes
+    };
   }
 
   // -- Block transforms --
 
-  // Generate per-block transform params from PRNG.
   function genXforms(n, rng) {
-    const xforms = [];
+    const xf = [];
     for (let i = 0; i < n; i++)
-      xforms.push({ inv: rng() > 0.5, ch: (rng() * 3) | 0, sp: (rng() * 4) | 0, fl: rng() > 0.5 });
-    return xforms;
+      xf.push({ inv: rng() > 0.5, ch: (rng() * 3) | 0, sp: (rng() * 4) | 0, fl: rng() > 0.5 });
+    return xf;
   }
 
-  // Forward block transform: shuffle + rotate/flip + color.
-  function blockFwd(src32, dst32, nw, contentH, B, xforms, perm) {
-    const bw = nw / B;
-    const n = bw * (contentH / B);
-
+  async function blockFwd(src32, dst32, nw, ch, xf, perm) {
+    const bw = nw / B, n = bw * (ch / B);
+    const step = Math.max(500, (n / 10) | 0);
     for (let i = 0; i < n; i++) {
-      const S = perm[i], D = i;
-      const t = xforms[S];
+      const S = perm[i], D = i, t = xf[S];
       const sbx = S % bw, sby = (S / bw) | 0;
       const dbx = D % bw, dby = (D / bw) | 0;
-
       for (let y = 0; y < B; y++) {
+        const sOff = (sby * B + y) * nw + sbx * B;
         for (let x = 0; x < B; x++) {
-          const si = (sby * B + y) * nw + (sbx * B + x);
-          let px = colorFwd(src32[si], t.inv, t.ch);
-
+          let px = colorFwd(src32[sOff + x], t.inv, t.ch);
           let cx = x, cy = y;
-          for (let r = 0; r < t.sp; r++) {
-            let nx = B - 1 - cy;
-            cy = cx; cx = nx;
-          }
+          for (let r = 0; r < t.sp; r++) { let nx = B - 1 - cy; cy = cx; cx = nx; }
           if (t.fl) cx = B - 1 - cx;
-
-          dst32[(dby * B + cy) * nw + (dbx * B + cx)] = px;
+          dst32[(dby * B + cy) * nw + dbx * B + cx] = px;
         }
+      }
+      if (i > 0 && i % step === 0) {
+        await new Promise(r => setTimeout(r, 0));
       }
     }
   }
 
-  // Inverse block transform: unshuffle + reverse rotate/flip + color.
-  function blockRev(src32, dst32, nw, contentH, B, xforms, perm) {
+  async function blockRev(src32, dst32, nw, ch, xf, perm) {
     const inv = invert(perm);
-    const bw = nw / B;
-    const n = bw * (contentH / B);
-
+    const bw = nw / B, n = bw * (ch / B);
+    const step = Math.max(500, (n / 10) | 0);
     for (let j = 0; j < n; j++) {
-      const S = inv[j], D = j;
-      const t = xforms[j];
+      const S = inv[j], D = j, t = xf[j];
       const sbx = S % bw, sby = (S / bw) | 0;
       const dbx = D % bw, dby = (D / bw) | 0;
       const rot = (4 - t.sp) % 4;
-
       for (let y = 0; y < B; y++) {
+        const sOff = (sby * B + y) * nw + sbx * B;
         for (let x = 0; x < B; x++) {
-          const si = (sby * B + y) * nw + (sbx * B + x);
-          let px = src32[si];
-
+          let px = src32[sOff + x];
           let cx = x, cy = y;
           if (t.fl) cx = B - 1 - cx;
-          for (let r = 0; r < rot; r++) {
-            let nx = B - 1 - cy;
-            cy = cx; cx = nx;
-          }
-
-          dst32[(dby * B + cy) * nw + (dbx * B + cx)] = colorRev(px, t.inv, t.ch);
+          for (let r = 0; r < rot; r++) { let nx = B - 1 - cy; cy = cx; cx = nx; }
+          dst32[(dby * B + cy) * nw + dbx * B + cx] = colorRev(px, t.inv, t.ch);
         }
+      }
+      if (j > 0 && j % step === 0) {
+        await new Promise(r => setTimeout(r, 0));
       }
     }
   }
 
-  // -- Image encode/decode --
+  // -- Image API --
 
-  // Encode: block-scramble image and embed signal.
-  async function obfuscate(srcCanvas, key) {
-    if (key === undefined || key === null) key = '';
+  async function obfuscate(srcInput, key) {
+    if (key == null) key = '';
+    const srcCanvas = toCanvas(srcInput);
     const ow = srcCanvas.width, oh = srcCanvas.height;
-    const B = (ow >= 1000 && oh >= 1000) ? 16 : 8;
-    const VER = (B === 16) ? 2 : 1;
-    const { nw, nh } = encDims(ow, oh, B);
+    const { nw, nh } = encDims(ow, oh);
+    const contentH = nh - H_SIG;
 
-    // Pad source to block-aligned canvas.
     const c = document.createElement('canvas');
     c.width = nw; c.height = nh;
     const ctx = c.getContext('2d');
@@ -306,152 +353,135 @@ const AZ = (() => {
     ctx.fillRect(0, 0, nw, nh);
     ctx.drawImage(srcCanvas, 0, 0);
 
-    // Read content region.
-    const contentH = nh - H_SIG;
     const d = ctx.getImageData(0, 0, nw, contentH).data;
-    const seed = await hash(key);
-    const rng = prng(seed);
-    const bw = nw / B, n = bw * (contentH / B);
-
-    // Generate transforms and permutation.
-    const xforms = genXforms(n, rng);
+    const rng = prng(await hash(key));
+    const n = (nw / B) * (contentH / B);
+    const xf = genXforms(n, rng);
     const perm = shuffle(n, rng);
 
-    // Forward block transform.
     const rd = new Uint8ClampedArray(d.length);
-    const src32 = new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4);
-    const dst32 = new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4);
-    blockFwd(src32, dst32, nw, contentH, B, xforms, perm);
+    await blockFwd(
+      new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4),
+      new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4),
+      nw, contentH, xf, perm
+    );
 
-    // Write result and embed signal.
     ctx.putImageData(new ImageData(rd, nw, contentH), 0, 0);
     const full = ctx.getImageData(0, 0, nw, nh);
-    writeSig(full.data, nw, nh, ow, oh, B, VER);
+    writeSig(full.data, nw, nh, ow, oh);
     ctx.putImageData(full, 0, 0);
     return c;
   }
 
-  // Decode: detect resize, restore dimensions, inverse block transform.
-  async function deobfuscate(srcCanvas, key) {
-    if (key === undefined || key === null) key = '';
+  async function deobfuscate(input, key, opts = {}) {
+    if (key == null) key = '';
+    const srcCanvas = toCanvas(input);
     const curW = srcCanvas.width, curH = srcCanvas.height;
+    if (curW === 0 || curH === 0) throw new Error('이미지 엘리먼트가 로드되지 않았거나 너비가 0입니다.');
+
     const ctx = srcCanvas.getContext('2d');
 
-    // Read signal from current (possibly resized) image.
-    const full = ctx.getImageData(0, 0, curW, curH);
-    const sig = readSig(full.data, curW, curH);
-    if (!sig) throw new Error('No signal found');
+    // 1. 하단 메타데이터 감지
+    const sig = readSig(ctx.getImageData(0, 0, curW, curH).data, curW, curH);
+    if (!sig) throw new Error('유효한 난독화 시그널(AI!)을 찾을 수 없습니다.');
 
-    const B = sig.B;
-    const { nw, nh } = encDims(sig.origW, sig.origH, B);
+    const { nw, nh } = encDims(sig.origW, sig.origH);
     const contentH = nh - H_SIG;
 
-    // Detect resize and restore to encoded dimensions if needed.
-    const resized = (curW !== nw || curH !== nh);
+    // 2. 리사이징 필요 여부 판단 (이미 난독화 규격 크기 그대로인 경우 불필요한 drawImage 및 임시 캔버스 생략)
     let workData;
-    if (resized) {
+    if (curW === nw && curH === nh) {
+      workData = ctx.getImageData(0, 0, nw, contentH).data;
+    } else {
       const tmp = document.createElement('canvas');
       tmp.width = nw; tmp.height = nh;
-      tmp.getContext('2d').drawImage(srcCanvas, 0, 0, nw, nh);
-      workData = tmp.getContext('2d').getImageData(0, 0, nw, contentH).data;
-    } else {
-      workData = ctx.getImageData(0, 0, nw, contentH).data;
+      const tmpCtx = tmp.getContext('2d');
+      tmpCtx.imageSmoothingEnabled = true;
+      tmpCtx.drawImage(srcCanvas, 0, 0, nw, nh);
+      workData = tmpCtx.getImageData(0, 0, nw, contentH).data;
     }
 
-    // Replay PRNG at original encoded dimensions.
-    const seed = await hash(key);
-    const rng = prng(seed);
-    const bw = nw / B, n = bw * (contentH / B);
-    const xforms = genXforms(n, rng);
+    const rng = prng(await hash(key));
+    const bw = nw / B, bh = contentH / B;
+    const n = bw * bh;
+    const xf = genXforms(n, rng);
     const perm = shuffle(n, rng);
 
-    // Inverse block transform.
     const rd = new Uint8ClampedArray(workData.length);
-    const src32 = new Uint32Array(workData.buffer, workData.byteOffset, workData.byteLength / 4);
-    const dst32 = new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4);
-    blockRev(src32, dst32, nw, contentH, B, xforms, perm);
+    await blockRev(
+      new Uint32Array(workData.buffer, workData.byteOffset, workData.byteLength / 4),
+      new Uint32Array(rd.buffer, rd.byteOffset, rd.byteLength / 4),
+      nw, contentH, xf, perm
+    );
 
-    // Crop to original content size.
-    const tmp = document.createElement('canvas');
-    tmp.width = nw; tmp.height = contentH;
-    tmp.getContext('2d').putImageData(new ImageData(rd, nw, contentH), 0, 0);
+    // 3. 원본 해상도 매핑 및 바뀐 가로 크기(targetWidth) 기준 축소 보정
+    let outW = sig.origW, outH = sig.origH;
+    if (opts.targetWidth && opts.targetWidth > 0 && opts.targetWidth !== sig.origW) {
+      outW = opts.targetWidth;
+      outH = Math.round((sig.origH * outW) / sig.origW);
+    }
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = nw;
+    workCanvas.height = contentH;
+    workCanvas.getContext('2d').putImageData(new ImageData(rd, nw, contentH), 0, 0);
+
+    if (nw === outW && contentH === outH) {
+      return workCanvas;
+    }
 
     const out = document.createElement('canvas');
-    out.width = sig.origW; out.height = sig.origH;
-    out.getContext('2d').drawImage(tmp, 0, 0, sig.origW, sig.origH, 0, 0, sig.origW, sig.origH);
+    out.width = outW;
+    out.height = outH;
+    const outCtx = out.getContext('2d');
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+    outCtx.drawImage(workCanvas, 0, 0, sig.origW, sig.origH, 0, 0, outW, outH);
+
     return out;
   }
 
-  // Detect signal in any image or canvas element.
-  async function detect(imgOrCanvas) {
-    const c = document.createElement('canvas');
-    if (imgOrCanvas instanceof HTMLCanvasElement) {
-      c.width = imgOrCanvas.width; c.height = imgOrCanvas.height;
-      c.getContext('2d').drawImage(imgOrCanvas, 0, 0);
-    } else {
-      c.width = imgOrCanvas.naturalWidth || imgOrCanvas.width;
-      c.height = imgOrCanvas.naturalHeight || imgOrCanvas.height;
-      c.getContext('2d').drawImage(imgOrCanvas, 0, 0);
-    }
-    return readSig(c.getContext('2d').getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+  async function detect(el) {
+    const srcCanvas = toCanvas(el);
+    const ctx = srcCanvas.getContext('2d');
+    return readSig(ctx.getImageData(0, 0, srcCanvas.width, srcCanvas.height).data, srcCanvas.width, srcCanvas.height);
   }
 
-  // -- Text encode/decode --
+  // -- Text API --
 
-  // Bytes → base64.
-  function toB64(bytes) {
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
-  }
-
-  // Base64 → bytes.
-  function fromB64(b64) {
-    const clean = b64.replace(/[^A-Za-z0-9+/=]/g, '');
-    const bin = atob(clean);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-
-  // Encode text with XOR + bitwise rotation.
+  // 텍스트 난독화 (버전 1)
   async function obfuscateText(text, key) {
-    if (key === undefined || key === null) key = '';
-    const seed = await hash(key);
-    const rng = prng(seed);
+    if (key == null) key = '';
+    const rng = prng(await hash(key));
     const data = new TextEncoder().encode(text);
     const out = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) {
-      const xv = (rng() * 256) | 0;
-      const r = (rng() * 8) | 0;
-      let b = data[i] ^ xv;
-      b = ((b << r) | (b >>> (8 - r))) & 0xFF;
-      out[i] = b;
+      const xv = (rng() * 256) | 0, r = (rng() * 8) | 0;
+      out[i] = ((data[i] ^ xv) << r | (data[i] ^ xv) >>> (8 - r)) & 0xFF;
     }
-    return `AI!1(${toB64(out)})`;
+    let bin = '';
+    for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+    return `AI!1(${btoa(bin)})`;
   }
 
-  // Decode text with reverse bitwise rotation + XOR.
+  // 텍스트 복원 (버전 1)
   async function deobfuscateText(str, key) {
-    if (key === undefined || key === null) key = '';
+    if (key == null) key = '';
     const match = str.match(/AI!1\(([^)]+)\)/);
     if (!match) throw new Error('No AI!1(...) signature found');
-    const data = fromB64(match[1]);
-    const seed = await hash(key);
-    const rng = prng(seed);
+    const raw = atob(match[1].replace(/[^A-Za-z0-9+/=]/g, ''));
+    const data = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+    const rng = prng(await hash(key));
     const out = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) {
-      const xv = (rng() * 256) | 0;
-      const r = (rng() * 8) | 0;
-      let b = data[i];
-      b = ((b >>> r) | (b << (8 - r))) & 0xFF;
-      b = b ^ xv;
-      out[i] = b;
+      const xv = (rng() * 256) | 0, r = (rng() * 8) | 0;
+      out[i] = (((data[i] >>> r) | (data[i] << (8 - r))) & 0xFF) ^ xv;
     }
     return new TextDecoder().decode(out);
   }
 
   // -- Public API --
 
-  return { obfuscate, deobfuscate, detect, readSignal: readSig, obfuscateText, deobfuscateText };
+  return { obfuscate, deobfuscate, detect, readSig, obfuscateText, deobfuscateText };
 })();

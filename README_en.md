@@ -59,12 +59,13 @@ extension/            ← Browser extension (Chrome, Firefox, Safari)
   manifest.json
   converter.html      ← Built-in converter page
   converter.js
-  obfuscator.js
-  background.js
-  content.js
-  page-worker.js      ← Main World script (for image canvas processing)
   popup.html
   options.html
+  engine/
+    obfuscator.js     ← Core engine
+    background.js
+    content.js
+    page-worker.js    ← Main World script (for image canvas processing)
 ```
 
 ### Image Shuffle Algorithm

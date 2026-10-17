@@ -1,3 +1,6 @@
+const ext = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+const storage = ext.storage?.sync || ext.storage?.local;
+
 const enabledEl = document.getElementById('enabled');
 const htmlReplaceEl = document.getElementById('htmlReplace');
 const convertInputsEl = document.getElementById('convertInputs');
@@ -5,7 +8,7 @@ const seedEl = document.getElementById('seed');
 const statusEl = document.getElementById('status');
 
 // load settings
-chrome.storage.sync.get({ enabled: true, key: '', htmlReplace: true, convertInputs: false }, cfg => {
+storage?.get({ enabled: true, key: '', htmlReplace: true, convertInputs: false }, cfg => {
   enabledEl.checked = cfg.enabled;
   htmlReplaceEl.checked = cfg.htmlReplace;
   convertInputsEl.checked = cfg.convertInputs;
@@ -14,7 +17,7 @@ chrome.storage.sync.get({ enabled: true, key: '', htmlReplace: true, convertInpu
 
 // save settings
 document.getElementById('save').addEventListener('click', () => {
-  chrome.storage.sync.set({
+  storage?.set({
     enabled: enabledEl.checked,
     htmlReplace: htmlReplaceEl.checked,
     convertInputs: convertInputsEl.checked,

@@ -117,23 +117,39 @@
       const sig = await AZ.detect(canvas);
       if (!sig) { img.setAttribute(ATTR, 'no-signal'); return; }
 
-      const result = await AZ.deobfuscate(canvas, key);
+      // 서버사이드 재인코딩 등으로 가로축 길이가 바뀌어 있는 경우 축소 처리
+      const currentW = canvas.width || w;
+      const targetWidth = (currentW > 0 && currentW !== sig.origW) ? currentW : undefined;
+      let result = await AZ.deobfuscate(canvas, key, { targetWidth });
+
+      // 결과 너비가 바뀐 가로 크기보다 크면 축소 보정
+      if (currentW > 0 && result.width > currentW) {
+        const targetH = Math.round((result.height * currentW) / result.width);
+        const scaled = document.createElement('canvas');
+        scaled.width = currentW;
+        scaled.height = targetH;
+        const sctx = scaled.getContext('2d');
+        sctx.imageSmoothingEnabled = true;
+        sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(result, 0, 0, currentW, targetH);
+        result = scaled;
+      }
+
       img.dataset.azOrigSrc = img.src;
 
-      // Prefer blob URL, fall back to data URL.
+      // Blob URL 생성 (실패 시 Data URL 폴백)
+      let src;
       try {
         const blob = await new Promise((ok, fail) => {
-          try { result.toBlob(ok, 'image/png'); } catch (e) { fail(e); }
+          if (!result.toBlob) return fail();
+          result.toBlob(b => b ? ok(b) : fail(), 'image/png');
         });
-        if (!blob) throw new Error('toBlob null');
-        const src = URL.createObjectURL(blob);
-        img.dataset.azDecodedSrc = src;
-        img.src = src;
+        src = URL.createObjectURL(blob);
       } catch (_) {
-        const src = result.toDataURL('image/png');
-        img.dataset.azDecodedSrc = src;
-        img.src = src;
+        src = result.toDataURL('image/png');
       }
+      img.dataset.azDecodedSrc = src;
+      img.src = src;
 
       img.setAttribute(ATTR, 'decoded');
       decodedCount++;
