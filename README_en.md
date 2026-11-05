@@ -7,7 +7,7 @@ Obfuscate images and text to bypass censorship, prevent unauthorized scraping by
 
 - **Bypass Censorship**: Obfuscate text and images to bypass automated censorship and filtering systems.
 - **Prevent Scraping & AI Training**: By publishing content in an obfuscated format, you prevent crawlers and AI bots from unauthorized scraping or using your content as training data.
-- **User Convenience**: Recipients with the browser extension installed can automatically view the original clean content in their browser without any manual steps.
+- **User Convenience**: Recipients with the browser extension installed can automatically view the original content in their browser without any manual steps.
 
 ### Conversion Options
 
@@ -59,20 +59,21 @@ extension/            ← Browser extension (Chrome, Firefox, Safari)
   manifest.json
   converter.html      ← Built-in converter page
   converter.js
-  obfuscator.js
-  background.js
-  content.js
-  page-worker.js      ← Main World script (for image canvas processing)
   popup.html
   options.html
+  engine/
+    obfuscator.js     ← Core engine
+    background.js
+    content.js
+    page-worker.js    ← Main World script (for image canvas processing)
 ```
 
 ### Image Shuffle Algorithm
 
 1. Seed → SHA-256 → PRNG seed
-2. Split into 8×8 or 16×16 blocks (auto-scaled) → per-block color invert / channel rotate / spatial rotate / flip
+2. Split into 16×16 blocks → per-block color invert / channel rotate / spatial rotate / flip
 3. Fisher-Yates shuffle to reorder blocks
-4. Embed 64-bit metadata (signal, version, original resolution) in bottom 4px
+4. Embed 64-bit metadata (signal, version, original resolution) in bottom area
 
 ### Text Shuffle Algorithm
 

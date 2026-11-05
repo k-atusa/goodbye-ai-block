@@ -1,36 +1,20 @@
-// page-worker.js — Main World: canvas-based image decode, bypasses Xray Vision.
+// Decode image from Main World (bypasses Xray Vision)
 (() => {
+  // ===== constants and common helpers =====
   const MIN_SIZE = 64;
   const ATTR = 'data-az-processed';
   const MSG_SRC = 'goodbye-ai-block-page';
   let enabled = true, key = '';
   let decodedCount = 0;
-
   const fetchCbs = new Map();
   let fetchId = 0;
 
-  // -- Messaging --
-
+  // post message inside window
   function post(payload) {
     window.postMessage({ source: MSG_SRC, payload }, '*');
   }
 
-  window.addEventListener('message', (e) => {
-    if (e.source !== window || e.data?.source !== 'goodbye-ai-block-content') return;
-    const msg = e.data.payload;
-    if (msg.type === 'az-settings') {
-      enabled = msg.enabled;
-      key = msg.key;
-      if (enabled) scanImages();
-    } else if (msg.type === 'az-scan') {
-      scanImages();
-    } else if (msg.type === 'az-fetch-result') {
-      const cb = fetchCbs.get(msg.id);
-      if (cb) { cb(msg); fetchCbs.delete(msg.id); }
-    }
-  });
-
-  // Cross-origin fetch via background proxy.
+  // fetch via background proxy
   function bgFetch(url) {
     const id = ++fetchId;
     return new Promise(resolve => {
@@ -39,9 +23,23 @@
     });
   }
 
-  // -- Image loading --
+  // receive message from content script
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.data?.source !== 'goodbye-ai-block-content') return;
+    const msg = e.data.payload;
+    if (msg.type === 'az-settings') { // update settings
+      enabled = msg.enabled;
+      key = msg.key;
+      if (enabled) scanImages();
+    } else if (msg.type === 'az-scan') { // scan order
+      scanImages();
+    } else if (msg.type === 'az-fetch-result') { // fetch result
+      const cb = fetchCbs.get(msg.id);
+      if (cb) { cb(msg); fetchCbs.delete(msg.id); }
+    }
+  });
 
-  // Try drawing img to canvas, return null on taint.
+  // ===== image processing =====
   function tryDraw(img) {
     const c = document.createElement('canvas');
     c.width = img.naturalWidth || img.width;
@@ -52,12 +50,12 @@
     return c;
   }
 
-  // Load image to clean canvas with fallback chain.
+  // load image to canvas
   async function loadCanvas(img) {
-    // 1. Direct draw.
-    try { return tryDraw(img); } catch (_) {}
+    // try direct draw (1)
+    try { return tryDraw(img); } catch (_) { }
 
-    // 2. Reload with crossOrigin.
+    // try reload with crossOrigin (2)
     try {
       const i2 = await new Promise((ok, fail) => {
         const el = new Image();
@@ -67,9 +65,9 @@
         el.src = img.src;
       });
       return tryDraw(i2);
-    } catch (_) {}
+    } catch (_) { }
 
-    // 3. Background proxy fetch.
+    // try background proxy fetch (3)
     try {
       const res = await bgFetch(img.src);
       if (!res?.ok) return null;
@@ -85,8 +83,7 @@
     }
   }
 
-  // -- Image processing --
-
+  // scan images
   async function scanImages() {
     if (!enabled || typeof AZ === 'undefined') return;
     const imgs = document.querySelectorAll(`img:not([${ATTR}])`);
@@ -102,38 +99,54 @@
     await Promise.allSettled(tasks);
   }
 
+  // convert images
   async function processImage(img) {
+    // check if valid image target
     if (img.hasAttribute(ATTR)) return;
     img.setAttribute(ATTR, 'checking');
-
     const w = img.naturalWidth || img.width;
     const h = img.naturalHeight || img.height;
     if (w < MIN_SIZE || h < MIN_SIZE) { img.setAttribute(ATTR, 'skip'); return; }
 
     try {
+      // try to detect signal
       const canvas = await loadCanvas(img);
       if (!canvas) { img.setAttribute(ATTR, 'skip'); return; }
-
       const sig = await AZ.detect(canvas);
       if (!sig) { img.setAttribute(ATTR, 'no-signal'); return; }
 
-      const result = await AZ.deobfuscate(canvas, key);
-      img.dataset.azOrigSrc = img.src;
+      // get current image scale, deobscurate
+      const currentW = canvas.width || w;
+      const targetWidth = (currentW > 0 && currentW !== sig.origW) ? currentW : undefined;
+      let result = await AZ.deobfuscate(canvas, key, { targetWidth });
 
-      // Prefer blob URL, fall back to data URL.
+      // resize original image to current size
+      if (currentW > 0 && result.width > currentW) {
+        const targetH = Math.round((result.height * currentW) / result.width);
+        const scaled = document.createElement('canvas');
+        scaled.width = currentW;
+        scaled.height = targetH;
+        const sctx = scaled.getContext('2d');
+        sctx.imageSmoothingEnabled = true;
+        sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(result, 0, 0, currentW, targetH);
+        result = scaled;
+      }
+
+      // replace with blob URL or data URL
+      img.dataset.azOrigSrc = img.src;
+      let src;
       try {
         const blob = await new Promise((ok, fail) => {
-          try { result.toBlob(ok, 'image/png'); } catch (e) { fail(e); }
+          if (!result.toBlob) return fail();
+          result.toBlob(b => b ? ok(b) : fail(), 'image/png');
         });
-        if (!blob) throw new Error('toBlob null');
-        const src = URL.createObjectURL(blob);
-        img.dataset.azDecodedSrc = src;
-        img.src = src;
+        src = URL.createObjectURL(blob);
       } catch (_) {
-        const src = result.toDataURL('image/png');
-        img.dataset.azDecodedSrc = src;
-        img.src = src;
+        src = result.toDataURL('image/png');
       }
+      img.dataset.azDecodedSrc = src;
+      img.src = src;
 
       img.setAttribute(ATTR, 'decoded');
       decodedCount++;
@@ -144,8 +157,7 @@
     }
   }
 
-  // -- DOM observer --
-
+  // ===== DOM mutation observe =====
   let timer = null;
   const obs = new MutationObserver((mutations) => {
     if (!enabled) return;
@@ -159,6 +171,5 @@
     timer = setTimeout(() => { timer = null; scanImages(); }, 250);
   });
   obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
-
   post({ type: 'az-ready' });
 })();

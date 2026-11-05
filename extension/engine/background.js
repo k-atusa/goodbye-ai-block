@@ -1,23 +1,26 @@
-// background.js — Service worker: CORS proxy and badge updates.
+// ServiceWorker: CORS proxy and badge updates
+const ext = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
+const action = ext.action || ext.browserAction;
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+// image update listener
+ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'fetch-image') {
     fetchDataUrl(msg.url)
       .then(dataUrl => sendResponse({ ok: true, dataUrl }))
       .catch(err => sendResponse({ ok: false, error: err.message }));
-    return true;
+    return true; // Keep channel open for async response
   }
 
   if (msg.type === 'update-badge') {
     const tabId = sender.tab?.id;
-    if (tabId && chrome.action?.setBadgeText) {
-      chrome.action.setBadgeText({ text: msg.count > 0 ? String(msg.count) : '', tabId });
-      chrome.action.setBadgeBackgroundColor?.({ color: '#c084fc', tabId });
+    if (tabId && action?.setBadgeText) {
+      action.setBadgeText({ text: msg.count > 0 ? String(msg.count) : '', tabId });
+      action.setBadgeBackgroundColor?.({ color: '#c084fc', tabId });
     }
   }
 });
 
-// Fetch URL → base64 data URL.
+// make base64 data URL
 async function fetchDataUrl(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
