@@ -1,5 +1,6 @@
+// convert and test page
 (() => {
-  // Tabs
+  // tab switch
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab, .panel').forEach(el => el.classList.remove('active'));
@@ -8,6 +9,7 @@
     });
   });
 
+  // constants
   const drop = document.getElementById('dropzone');
   const fileIn = document.getElementById('fileInput');
   const seedIn = document.getElementById('seedInput');
@@ -17,17 +19,15 @@
   const statusEl = document.getElementById('status');
   const grid = document.getElementById('grid');
   const items = [];
-
-  // 문자열 상수로만 정의된 정적 HTML 템플릿 (XSS 방지)
   const ITEM_TEMPLATE = '<div class="item-head"><span class="item-name"></span><span class="item-meta"></span><span class="item-badge"></span></div><div class="item-body"><div class="src"></div><span class="arrow" style="display:none">→</span><div class="res"></div></div><div class="item-foot" style="display:none"><button class="btn-sec dl">Download</button></div>';
 
-  // 시드 자동 로드 및 동기화 (URL 파라미터, chrome.storage.sync 또는 localStorage)
+  // load seed and browser type
   const urlSeed = new URLSearchParams(window.location.search).get('seed');
   if (urlSeed) seedIn.value = urlSeed;
-
   const ext = (typeof browser !== 'undefined' && browser.runtime) ? browser : (typeof chrome !== 'undefined' ? chrome : null);
   const storage = ext?.storage?.sync || ext?.storage?.local;
 
+  // load seed from localStorage
   if (storage) {
     storage.get({ key: '' }, cfg => {
       if (cfg.key && !seedIn.value) seedIn.value = cfg.key;
@@ -43,9 +43,55 @@
       const saved = localStorage.getItem('goodbye_ai_seed');
       if (saved && !seedIn.value) seedIn.value = saved;
       seedIn.addEventListener('input', () => localStorage.setItem('goodbye_ai_seed', seedIn.value));
-    } catch (_) {}
+    } catch (_) { }
   }
 
+  // generate thumbnail
+  function thumb(cv) {
+    const t = document.createElement('canvas');
+    const s = Math.min(160 / cv.width, 80 / cv.height, 1);
+    t.width = cv.width * s; t.height = cv.height * s;
+    t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height);
+    return t;
+  }
+
+  // status update
+  function updateUI() {
+    btnConvert.disabled = !items.some(i => i.status !== 'loading' && i.status !== 'processing');
+    btnDlAll.style.display = items.some(i => i.status === 'done') ? '' : 'none';
+    btnClear.style.display = items.length ? '' : 'none';
+  }
+
+  // status notification
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status' + (cls ? ' ' + cls : '');
+  }
+
+  // download image
+  function downloadItem(item) {
+    if (!item.result) return;
+    const t = item.type === 'image/png' ? 'image/png' : 'image/webp';
+    item.result.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = item.name.replace(/\.[^.]+$/, '') + (t === 'image/png' ? '.png' : '.webp');
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }, t, t === 'image/webp' ? 1.0 : undefined);
+  }
+
+  // download all images
+  async function downloadAll() {
+    for (const item of items) {
+      if (item.status === 'done') {
+        downloadItem(item);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+  }
+
+  // ===== Image panel =====
   function addFiles(files) {
     for (const f of files) {
       if (!f.type.startsWith('image/')) continue;
@@ -56,6 +102,7 @@
     updateUI();
   }
 
+  // load thumbnails
   async function loadItem(item) {
     try {
       let bmp;
@@ -84,21 +131,23 @@
     updateUI();
   }
 
+  // render original and converted image
   function render(item) {
     if (!item.el) {
       item.el = document.createElement('div');
       item.el.className = 'item';
-      item.el.innerHTML = ITEM_TEMPLATE; // 문자열 상수만 대입
+      item.el.innerHTML = ITEM_TEMPLATE;
       grid.appendChild(item.el);
     }
 
+    // set name and size
     const nameEl = item.el.querySelector('.item-name');
     nameEl.textContent = item.name;
     nameEl.title = item.name;
-
     const metaEl = item.el.querySelector('.item-meta');
     metaEl.textContent = item.src ? `${item.src.width}×${item.src.height}` : '';
 
+    // converting status
     const badgeClass = {
       loading: 'badge-wait', processing: 'badge-wait',
       done: 'badge-done', error: 'badge-err'
@@ -113,6 +162,7 @@
     badgeEl.className = 'item-badge' + (badgeClass ? ' ' + badgeClass : '');
     badgeEl.style.display = badgeText ? '' : 'none';
 
+    // draw thumbnails
     const srcDiv = item.el.querySelector('.src');
     if (srcDiv.children.length === 0 && item.src) {
       srcDiv.appendChild(thumb(item.src));
@@ -132,27 +182,9 @@
     if (dl) dl.onclick = () => downloadItem(item);
   }
 
-  function thumb(cv) {
-    const t = document.createElement('canvas');
-    const s = Math.min(160 / cv.width, 80 / cv.height, 1);
-    t.width = cv.width * s; t.height = cv.height * s;
-    t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height);
-    return t;
-  }
-
-  function updateUI() {
-    btnConvert.disabled = !items.some(i => i.status !== 'loading' && i.status !== 'processing');
-    btnDlAll.style.display = items.some(i => i.status === 'done') ? '' : 'none';
-    btnClear.style.display = items.length ? '' : 'none';
-  }
-
-  function setStatus(msg, cls) {
-    statusEl.textContent = msg;
-    statusEl.className = 'status' + (cls ? ' ' + cls : '');
-  }
-
-  // 비동기 동시 병렬 일괄 변환
+  // convert all images
   async function convertAll() {
+    // base status
     btnConvert.disabled = true;
     const seed = seedIn.value;
     const queue = items.filter(i => i.status !== 'loading');
@@ -165,6 +197,7 @@
     const concurrency = Math.min(4, Math.max(2, navigator.hardwareConcurrency || 2));
     let cursor = 0;
 
+    // convert job
     async function worker() {
       while (cursor < queue.length) {
         const item = queue[cursor++];
@@ -172,7 +205,7 @@
         item.result = null;
         render(item);
 
-        try {
+        try { // obscurate or deobfuscate
           item.result = item.signal
             ? await AZ.deobfuscate(item.src, seed)
             : await AZ.obfuscate(item.src, seed);
@@ -188,32 +221,13 @@
       }
     }
 
+    // convert all files
     await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, () => worker()));
     setStatus(fail ? `${ok} done, ${fail} failed` : `Done: ${ok}`, fail ? 'err' : 'ok');
     updateUI();
   }
 
-  function downloadItem(item) {
-    if (!item.result) return;
-    const t = item.type === 'image/png' ? 'image/png' : 'image/webp';
-    item.result.toBlob(blob => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = item.name.replace(/\.[^.]+$/, '') + (t === 'image/png' ? '.png' : '.webp');
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    }, t, t === 'image/webp' ? 1.0 : undefined);
-  }
-
-  async function downloadAll() {
-    for (const item of items) {
-      if (item.status === 'done') {
-        downloadItem(item);
-        await new Promise(r => setTimeout(r, 300));
-      }
-    }
-  }
-
+  // button listeners
   drop.addEventListener('click', () => fileIn.click());
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
@@ -235,7 +249,7 @@
     setStatus('');
   });
 
-  // Text panel
+  // ===== Text panel =====
   const txtIn = document.getElementById('txtInput');
   const txtOut = document.getElementById('txtOutput');
   const txtSt = document.getElementById('txtStatus');
@@ -250,10 +264,10 @@
       else { txtOut.value = await AZ.obfuscateText(val, seed); setTxtSt('Encoded', 'ok'); }
     } catch (e) { setTxtSt(e.message, 'err'); }
   });
-  document.getElementById('btnTxtCopy').addEventListener('click', () => { navigator.clipboard.writeText(txtOut.value || txtIn.value).catch(() => {}); });
+  document.getElementById('btnTxtCopy').addEventListener('click', () => { navigator.clipboard.writeText(txtOut.value || txtIn.value).catch(() => { }); });
   document.getElementById('btnTxtClear').addEventListener('click', () => { txtIn.value = ''; txtOut.value = ''; setTxtSt(''); });
 
-  // Test panel
+  // ===== Test panel =====
   const log = document.getElementById('log');
   function addLog(msg) { log.textContent += msg + '\n'; }
 
@@ -271,6 +285,7 @@
     return c;
   }
 
+  // run test
   let testsRun = false;
   async function runTests() {
     if (testsRun) return;

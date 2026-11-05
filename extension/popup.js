@@ -1,3 +1,4 @@
+// extension popup
 const ext = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
 const storage = ext.storage?.sync || ext.storage?.local;
 
@@ -44,7 +45,7 @@ btnSave.addEventListener('click', () => {
   });
 });
 
-// manual scan (Promise-based for cross-browser MV3)
+// manual scan
 if (btnScan) {
   btnScan.addEventListener('click', async () => {
     try {
@@ -67,7 +68,7 @@ if (btnOpen) {
   });
 }
 
-// show current status (Promise-based for cross-browser MV3)
+// show current status
 (async () => {
   try {
     const tabs = await ext.tabs.query({ active: true, currentWindow: true });

@@ -1,3 +1,4 @@
+// extension settings
 const ext = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
 const storage = ext.storage?.sync || ext.storage?.local;
 

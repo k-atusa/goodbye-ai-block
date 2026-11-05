@@ -1,19 +1,15 @@
-// Core obfuscation engine using deterministic PRNG (Image Version: 3, Text Version: 1)
-
+// Core obfuscation engine using deterministic PRNG (Image v3, Text v1)
 const AZ = (() => {
-
-  // -- Constants --
-
-  const MAGIC = [0x41, 0x49, 0x21]; // 'AI!'
-  const HI = 200, LO = 40, TH = 120;
-  const H_SIG = 20; // 신호 바 높이 (4px 검정 앵커 + 8px 상단 32비트 + 8px 하단 32비트)
-  const B = 16;     // 16x16 고정 블록 크기
-  const VER = 3;    // 이미지 난독화 버전 3
+  // ===== constants and common helpers =====
+  const MAGIC = [0x41, 0x49, 0x21]; // AI!
+  const HI = 200, LO = 40, TH = 120; // HIGT or LOW signal
+  const H_SIG = 12; // 4px anchor + 4px upper 32bit + 4px lower 32bit
+  const B = 16; // 16x16 blocksize
+  const VER = 3; // Image v3
   const IS_LE = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
   const INV_MASK = IS_LE ? 0x00FFFFFF : 0xFFFFFF00;
 
-  // -- Helpers --
-
+  // convert image to canvas
   function toCanvas(el) {
     if (el instanceof HTMLCanvasElement) return el;
     const c = document.createElement('canvas');
@@ -26,8 +22,7 @@ const AZ = (() => {
     return c;
   }
 
-  // -- Hashing & PRNG --
-
+  // pure-js SHA2-256
   function sha256(data) {
     const K = [
       0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -85,6 +80,7 @@ const AZ = (() => {
     return out;
   }
 
+  // hash seed with SHA2-256
   async function hash(str) {
     const data = new TextEncoder().encode(str);
     try {
@@ -93,6 +89,7 @@ const AZ = (() => {
     return sha256(data);
   }
 
+  // derieve PRNG sequence
   function prng(seed) {
     let s = 0;
     for (let i = 0; i < seed.length; i += 4)
@@ -106,8 +103,7 @@ const AZ = (() => {
     };
   }
 
-  // -- Permutation --
-
+  // shuffle array
   function shuffle(n, rng) {
     const p = Array.from({ length: n }, (_, i) => i);
     for (let i = n - 1; i > 0; i--) {
@@ -117,14 +113,14 @@ const AZ = (() => {
     return p;
   }
 
+  // restore array
   function invert(p) {
     const inv = new Array(p.length);
     for (let i = 0; i < p.length; i++) inv[p[i]] = i;
     return inv;
   }
 
-  // -- Pixel color transforms --
-
+  // shuffle color
   function colorFwd(px, inv, ch) {
     if (inv) px ^= INV_MASK;
     if (ch === 1) {
@@ -139,6 +135,7 @@ const AZ = (() => {
     return px;
   }
 
+  // restore color
   function colorRev(px, inv, ch) {
     let p = px;
     if (ch === 1) p = colorFwd(p, false, 2);
@@ -147,34 +144,35 @@ const AZ = (() => {
     return p;
   }
 
-  // -- Signal I/O --
-
+  // ===== signal IO =====
   function encDims(origW, origH) {
     const nw = Math.max(Math.ceil(origW / B) * B, 64);
     const nh = Math.ceil(origH / B) * B + H_SIG;
-    return { nw, nh };
+    return { nw, nh }; // size of converted image
   }
 
+  // write metadata 8B to image
   function writeSig(data, w, h, origW, origH) {
+    // metadata 64bit (MAGIC VERSION WIDTH HEIGHT)
     const bytes = [
       MAGIC[0], MAGIC[1], MAGIC[2], VER,
       (origW >> 8) & 0xFF, origW & 0xFF,
       (origH >> 8) & 0xFF, origH & 0xFF,
     ];
-
     const bits = [];
     for (let i = 0; i < 8; i++)
       for (let j = 0; j < 8; j++)
         bits.push((bytes[i] >> (7 - j)) & 1);
 
-    // 4px 검정 앵커 라인 (y: h - 20 ~ h - 16)
-    for (let row = h - 20; row < h - 16; row++) {
+    // 4px black anchor
+    for (let row = h - H_SIG; row < h - H_SIG + 4; row++) {
       for (let col = 0; col < w; col++) {
         const i = (row * w + col) * 4;
         data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 255;
       }
     }
 
+    // write 32bit row
     function writeRowBits(rowStart, rowEnd, bitSlice) {
       for (let bi = 0; bi < 32; bi++) {
         const v = bitSlice[bi] ? HI : LO;
@@ -190,15 +188,18 @@ const AZ = (() => {
       }
     }
 
-    writeRowBits(h - 16, h - 8, bits.slice(0, 32));  // Row A: Bit 0 ~ 31
-    writeRowBits(h - 8, h, bits.slice(32, 64));      // Row B: Bit 32 ~ 63
+    // write upper and lower
+    writeRowBits(h - H_SIG + 4, h - Math.floor((H_SIG - 4) / 2), bits.slice(0, 32));
+    writeRowBits(h - Math.floor((H_SIG - 4) / 2), h, bits.slice(32, 64));
   }
 
+  // read metadata 8B
   function readSig(data, w, h) {
-    if (w < 32 || h < 20) return null;
+    if (w < 32 || h < H_SIG) return null;
 
+    // detect black anchor
     let anchorY = -1;
-    for (let y = h - 1; y >= 16; y--) {
+    for (let y = h - 1; y >= h - H_SIG; y--) {
       let rSum = 0, gSum = 0, bSum = 0;
       const sampleStep = Math.max(1, Math.floor(w / 64));
       let count = 0;
@@ -209,20 +210,23 @@ const AZ = (() => {
       }
       const avgBrightness = (rSum + gSum + bSum) / (count * 3);
 
-      if (avgBrightness < 20.0) {
+      if (avgBrightness < 20.0) { // dark black anchor
         anchorY = y;
         break;
       }
     }
 
-    const rowA_StartY = anchorY !== -1 ? anchorY + 1 : Math.floor(h - 16);
-    const rowA_EndY = rowA_StartY + Math.max(2, Math.floor((h - rowA_StartY) / 2));
+    // calculate positions
+    const rowA_StartY = anchorY !== -1 ? anchorY + 1 : (h - H_SIG + 4);
+    const rowA_EndY = rowA_StartY + Math.max(1, Math.floor((h - rowA_StartY) / 2));
     const rowB_EndY = h;
 
+    // read 32bit row
     function readRowBits(yStart, yEnd) {
       const bitVals = new Float32Array(32);
       let minV = 255.0, maxV = 0.0;
 
+      // sampling average brightness
       for (let bi = 0; bi < 32; bi++) {
         const sx = (bi * w) / 32.0;
         const ex = ((bi + 1) * w) / 32.0;
@@ -246,14 +250,14 @@ const AZ = (() => {
         if (avg > maxV) maxV = avg;
       }
 
-      const th = (maxV - minV) > 30 ? (minV + maxV) / 2.0 : 120.0;
+      const th = (maxV - minV) > 30 ? (minV + maxV) / 2.0 : TH;
       return Array.from(bitVals).map(v => (v > th ? 1 : 0));
     }
 
+    // read upper and lower bits
     const bitsA = readRowBits(rowA_StartY, rowA_EndY);
     const bitsB = readRowBits(rowA_EndY, rowB_EndY);
     const bits = bitsA.concat(bitsB);
-
     const bytes = new Uint8Array(8);
     for (let i = 0; i < 8; i++) {
       let b = 0;
@@ -263,10 +267,10 @@ const AZ = (() => {
       bytes[i] = b;
     }
 
+    // check MAGIC and decode
     if (bytes[0] !== MAGIC[0] || bytes[1] !== MAGIC[1] || bytes[2] !== MAGIC[2]) {
       return null;
     }
-
     const ver = bytes[3];
     const origW = (bytes[4] << 8) | bytes[5];
     const origH = (bytes[6] << 8) | bytes[7];
@@ -280,15 +284,15 @@ const AZ = (() => {
     };
   }
 
-  // -- Block transforms --
-
+  // ===== Block transforms =====
   function genXforms(n, rng) {
     const xf = [];
     for (let i = 0; i < n; i++)
       xf.push({ inv: rng() > 0.5, ch: (rng() * 3) | 0, sp: (rng() * 4) | 0, fl: rng() > 0.5 });
-    return xf;
+    return xf; // transform list
   }
 
+  // obscurate image
   async function blockFwd(src32, dst32, nw, ch, xf, perm) {
     const bw = nw / B, n = bw * (ch / B);
     const step = Math.max(500, (n / 10) | 0);
@@ -312,6 +316,7 @@ const AZ = (() => {
     }
   }
 
+  // deobscurate image
   async function blockRev(src32, dst32, nw, ch, xf, perm) {
     const inv = invert(perm);
     const bw = nw / B, n = bw * (ch / B);
@@ -337,15 +342,16 @@ const AZ = (() => {
     }
   }
 
-  // -- Image API --
-
+  // ===== Image API =====
   async function obfuscate(srcInput, key) {
+    // calculate conversion
     if (key == null) key = '';
     const srcCanvas = toCanvas(srcInput);
     const ow = srcCanvas.width, oh = srcCanvas.height;
     const { nw, nh } = encDims(ow, oh);
     const contentH = nh - H_SIG;
 
+    // create canvas
     const c = document.createElement('canvas');
     c.width = nw; c.height = nh;
     const ctx = c.getContext('2d');
@@ -353,12 +359,14 @@ const AZ = (() => {
     ctx.fillRect(0, 0, nw, nh);
     ctx.drawImage(srcCanvas, 0, 0);
 
+    // shuffle
     const d = ctx.getImageData(0, 0, nw, contentH).data;
     const rng = prng(await hash(key));
     const n = (nw / B) * (contentH / B);
     const xf = genXforms(n, rng);
     const perm = shuffle(n, rng);
 
+    // block transfer
     const rd = new Uint8ClampedArray(d.length);
     await blockFwd(
       new Uint32Array(d.buffer, d.byteOffset, d.byteLength / 4),
@@ -366,6 +374,7 @@ const AZ = (() => {
       nw, contentH, xf, perm
     );
 
+    // write metadata
     ctx.putImageData(new ImageData(rd, nw, contentH), 0, 0);
     const full = ctx.getImageData(0, 0, nw, nh);
     writeSig(full.data, nw, nh, ow, oh);
@@ -374,21 +383,20 @@ const AZ = (() => {
   }
 
   async function deobfuscate(input, key, opts = {}) {
+    //  calculate conversion
     if (key == null) key = '';
     const srcCanvas = toCanvas(input);
     const curW = srcCanvas.width, curH = srcCanvas.height;
-    if (curW === 0 || curH === 0) throw new Error('이미지 엘리먼트가 로드되지 않았거나 너비가 0입니다.');
-
+    if (curW === 0 || curH === 0) throw new Error('Image element not loaded');
     const ctx = srcCanvas.getContext('2d');
 
-    // 1. 하단 메타데이터 감지
+    // detect metadata
     const sig = readSig(ctx.getImageData(0, 0, curW, curH).data, curW, curH);
-    if (!sig) throw new Error('유효한 난독화 시그널(AI!)을 찾을 수 없습니다.');
-
+    if (!sig) throw new Error('No AI! signature found');
     const { nw, nh } = encDims(sig.origW, sig.origH);
     const contentH = nh - H_SIG;
 
-    // 2. 리사이징 필요 여부 판단 (이미 난독화 규격 크기 그대로인 경우 불필요한 drawImage 및 임시 캔버스 생략)
+    // resize if required
     let workData;
     if (curW === nw && curH === nh) {
       workData = ctx.getImageData(0, 0, nw, contentH).data;
@@ -401,12 +409,14 @@ const AZ = (() => {
       workData = tmpCtx.getImageData(0, 0, nw, contentH).data;
     }
 
+    // reverse-shuffle
     const rng = prng(await hash(key));
     const bw = nw / B, bh = contentH / B;
     const n = bw * bh;
     const xf = genXforms(n, rng);
     const perm = shuffle(n, rng);
 
+    // block transfer
     const rd = new Uint8ClampedArray(workData.length);
     await blockRev(
       new Uint32Array(workData.buffer, workData.byteOffset, workData.byteLength / 4),
@@ -414,7 +424,7 @@ const AZ = (() => {
       nw, contentH, xf, perm
     );
 
-    // 3. 원본 해상도 매핑 및 바뀐 가로 크기(targetWidth) 기준 축소 보정
+    // adjust resize
     let outW = sig.origW, outH = sig.origH;
     if (opts.targetWidth && opts.targetWidth > 0 && opts.targetWidth !== sig.origW) {
       outW = opts.targetWidth;
@@ -430,6 +440,7 @@ const AZ = (() => {
       return workCanvas;
     }
 
+    // create canvas
     const out = document.createElement('canvas');
     out.width = outW;
     out.height = outH;
@@ -437,7 +448,6 @@ const AZ = (() => {
     outCtx.imageSmoothingEnabled = true;
     outCtx.imageSmoothingQuality = 'high';
     outCtx.drawImage(workCanvas, 0, 0, sig.origW, sig.origH, 0, 0, outW, outH);
-
     return out;
   }
 
@@ -447,9 +457,7 @@ const AZ = (() => {
     return readSig(ctx.getImageData(0, 0, srcCanvas.width, srcCanvas.height).data, srcCanvas.width, srcCanvas.height);
   }
 
-  // -- Text API --
-
-  // 텍스트 난독화 (버전 1)
+  // ===== Text API =====
   async function obfuscateText(text, key) {
     if (key == null) key = '';
     const rng = prng(await hash(key));
@@ -464,11 +472,10 @@ const AZ = (() => {
     return `AI!1(${btoa(bin)})`;
   }
 
-  // 텍스트 복원 (버전 1)
   async function deobfuscateText(str, key) {
     if (key == null) key = '';
     const match = str.match(/AI!1\(([^)]+)\)/);
-    if (!match) throw new Error('No AI!1(...) signature found');
+    if (!match) throw new Error('No AI! signature found');
     const raw = atob(match[1].replace(/[^A-Za-z0-9+/=]/g, ''));
     const data = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
@@ -481,7 +488,6 @@ const AZ = (() => {
     return new TextDecoder().decode(out);
   }
 
-  // -- Public API --
-
+  // export to public
   return { obfuscate, deobfuscate, detect, readSig, obfuscateText, deobfuscateText };
 })();

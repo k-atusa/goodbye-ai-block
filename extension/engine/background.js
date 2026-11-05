@@ -1,8 +1,8 @@
-// background.js — Service worker / Event page: CORS proxy and badge updates.
-
+// ServiceWorker: CORS proxy and badge updates
 const ext = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome;
 const action = ext.action || ext.browserAction;
 
+// image update listener
 ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'fetch-image') {
     fetchDataUrl(msg.url)
@@ -20,7 +20,7 @@ ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// Fetch URL → base64 data URL.
+// make base64 data URL
 async function fetchDataUrl(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
