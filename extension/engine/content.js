@@ -144,7 +144,7 @@
     }
   });
 
-  // ===== obscured content scanner =====
+  // ===== obfuscated content scanner =====
   async function scanText() {
     if (!enabled || typeof AZ === 'undefined') return;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
@@ -231,7 +231,7 @@
       const sig = await AZ.detect(canvas);
       if (!sig) { img.setAttribute(ATTR, 'no-signal'); return; }
 
-      // get current image scale, deobscurate
+      // get current image scale, deobfuscate
       const currentW = canvas.width || w;
       const targetWidth = (currentW > 0 && currentW !== sig.origW) ? currentW : undefined;
       let result = await AZ.deobfuscate(canvas, key, { targetWidth });
