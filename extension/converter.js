@@ -19,7 +19,7 @@
   const statusEl = document.getElementById('status');
   const grid = document.getElementById('grid');
   const items = [];
-  
+
   // load seed and browser type
   const urlSeed = new URLSearchParams(window.location.search).get('seed');
   if (urlSeed) seedIn.value = urlSeed;
@@ -204,7 +204,7 @@
         item.result = null;
         render(item);
 
-        try { // obscurate or deobfuscate
+        try { // obfuscate or deobfuscate
           item.result = item.signal
             ? await AZ.deobfuscate(item.src, seed)
             : await AZ.obfuscate(item.src, seed);

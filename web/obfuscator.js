@@ -1,4 +1,4 @@
-// Core obfuscation engine using deterministic PRNG (Image v3, Text v1)
+// Core obfuscation engine using deterministic PRNG (Image v3, Text v1, TestID 838)
 const AZ = (() => {
   // ===== constants and common helpers =====
   const MAGIC = [0x41, 0x49, 0x21]; // AI!
@@ -292,7 +292,7 @@ const AZ = (() => {
     return xf; // transform list
   }
 
-  // obscurate image
+  // obfuscate image
   async function blockFwd(src32, dst32, nw, ch, xf, perm) {
     const bw = nw / B, n = bw * (ch / B);
     const step = Math.max(500, (n / 10) | 0);
@@ -316,7 +316,7 @@ const AZ = (() => {
     }
   }
 
-  // deobscurate image
+  // deobfuscate image
   async function blockRev(src32, dst32, nw, ch, xf, perm) {
     const inv = invert(perm);
     const bw = nw / B, n = bw * (ch / B);
