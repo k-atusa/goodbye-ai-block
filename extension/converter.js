@@ -19,8 +19,7 @@
   const statusEl = document.getElementById('status');
   const grid = document.getElementById('grid');
   const items = [];
-  const ITEM_TEMPLATE = '<div class="item-head"><span class="item-name"></span><span class="item-meta"></span><span class="item-badge"></span></div><div class="item-body"><div class="src"></div><span class="arrow" style="display:none">→</span><div class="res"></div></div><div class="item-foot" style="display:none"><button class="btn-sec dl">Download</button></div>';
-
+  
   // load seed and browser type
   const urlSeed = new URLSearchParams(window.location.search).get('seed');
   if (urlSeed) seedIn.value = urlSeed;
@@ -136,7 +135,7 @@
     if (!item.el) {
       item.el = document.createElement('div');
       item.el.className = 'item';
-      item.el.innerHTML = ITEM_TEMPLATE;
+      item.el.innerHTML = '<div class="item-head"><span class="item-name"></span><span class="item-meta"></span><span class="item-badge"></span></div><div class="item-body"><div class="src"></div><span class="arrow" style="display:none">→</span><div class="res"></div></div><div class="item-foot" style="display:none"><button class="btn-sec dl">Download</button></div>';
       grid.appendChild(item.el);
     }
 
